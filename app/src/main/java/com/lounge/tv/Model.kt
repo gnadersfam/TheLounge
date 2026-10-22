@@ -344,8 +344,8 @@ object Model {
             if (h == null || a == null) continue
             for ((team, f, ag) in listOf(Triple(m.home, h, a), Triple(m.away, a, h))) {
                 val rec = agg.getOrPut(team) { HashMap() }.getOrPut(x) { DoubleArray(3) }
-                rec[0] += f; rec[1] += ag; rec[2] += 1.0
-                tot[x]!![0] += f; tot[x]!![1] += 1.0
+                rec[0] += f.toDouble(); rec[1] += ag.toDouble(); rec[2] += 1.0
+                tot[x]!![0] += f.toDouble(); tot[x]!![1] += 1.0
             }
         }
         val avg = HashMap<String, Double>()

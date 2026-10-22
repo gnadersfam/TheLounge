@@ -167,7 +167,7 @@ class Engine(val state: FootState, year: Int, month: Int) {
         val out = by.map { (team, ms) ->
             val last = ms.takeLast(n)
             val seq = last.map { if (it.gf > it.ga) "W" else if (it.gf == it.ga) "D" else "L" }
-            FormTableRow(team, seq, last.size, seq.sumOf { if (it == "W") 3 else if (it == "D") 1 else 0 },
+            FormTableRow(team, seq, last.size, seq.fold(0) { acc, r -> acc + (if (r == "W") 3 else if (r == "D") 1 else 0) },
                 last.sumOf { it.gf }, last.sumOf { it.ga }, last.sumOf { it.xf }, last.sumOf { it.xa })
         }
         return out.sortedWith(compareBy({ -it.pts }, { -(it.gf - it.ga) }, { -it.xgd }, { it.team }))
