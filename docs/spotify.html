@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Lounge - Spotify</title>
+<style>
+  body{margin:0;padding:24px;background:#07030F;color:#F5EEFF;font:18px system-ui,sans-serif}
+  h1{color:#19F0FF;font-size:26px;margin:0 0 8px}
+  p{color:#C9B8F0;line-height:1.45}
+  code{color:#FF3DDB;word-break:break-all}
+</style>
+</head>
+<body>
+<h1>The Lounge</h1>
+<p id="msg">Sending you back to your Firestick...</p>
+<script>
+// Spotify sends you here after you sign in. This page only passes the one-time code on to your own Firestick,
+// on your own Wi-Fi. Nothing is stored here and no account details are kept on this website.
+(function () {
+  var q = new URLSearchParams(location.search);
+  var msg = document.getElementById('msg');
+  if (q.get('error')) {
+    msg.textContent = 'Spotify said: ' + q.get('error') + '. Nothing was connected. Go back to the TV and try again.';
+    return;
+  }
+  var state = q.get('state') || '';
+  var hostPort = state.split('.')[0];
+  // only forward to an address on a home network (192.168.x.x, 10.x.x.x or 172.16-31.x.x) with a port
+  var ok = /^(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}):\d{2,5}$/.test(hostPort);
+  if (!q.get('code') || !ok) {
+    msg.textContent = 'This page is only used while connecting Spotify from The Lounge on your TV. Start from the TV.';
+    return;
+  }
+  location.replace('http://' + hostPort + '/spotify' + location.search);
+})();
+</script>
+</body>
+</html>

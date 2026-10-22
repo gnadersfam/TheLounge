@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="lounge_bg">#0A0E1A</color>
+    <color name="lounge_bg">#07030F</color>
     <style name="Theme.Lounge" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/lounge_bg</item>
-        <item name="android:colorAccent">#5CE1E6</item>
+        <item name="android:colorAccent">#19F0FF</item>
     </style>
 </resources>

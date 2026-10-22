@@ -11,31 +11,64 @@ import android.view.SurfaceView
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import java.util.Locale
 
 /**
- * Full-screen player. Up / Down on the remote change channel, OK shows what's on, Back returns to the list.
- * If a stream drops it reconnects by itself, and if the server doesn't like .ts it tries .m3u8 (and remembers).
+ * Full-screen player for live channels, movies and episodes.
+ * Live: Up/Down change channel, OK shows what's on, Menu = audio / subtitles, Back = guide.
+ * Movies and episodes: Left/Right skip, OK pause, Menu = audio / subtitles, Back = list. Your place is remembered.
  */
 class PlayerActivity : Activity() {
 
     private lateinit var surface: SurfaceView
-    private lateinit var info: TextView
     private lateinit var spinner: ProgressBar
+    private lateinit var panel: LinearLayout
+    private lateinit var line1: TextView
+    private lateinit var line1Right: TextView
+    private lateinit var line2: TextView
+    private lateinit var bar: BarView
+    private lateinit var line3: TextView
+    private lateinit var hintLine: TextView
+    private lateinit var menu: LinearLayout
+    private lateinit var toast: TextView
+    private lateinit var matchBox: TextView
+
     private var player: ExoPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
+    private var live = true
     private var ext = "ts"
     private var retries = 0
     private var triedAlt = false
     private var epgToken = 0
-    private val hideInfo = Runnable { info.visibility = View.GONE }
+    private var lastPos = 0L
+    private var tickCount = 0
+    private var seekAccum = 0L
+
+    private val hidePanel = Runnable { panel.visibility = View.GONE; matchBox.visibility = View.GONE }
+    private val hideToast = Runnable { toast.visibility = View.GONE }
+    private val tick = object : Runnable {
+        override fun run() {
+            tickCount++
+            val p = player
+            if (!live && p != null) {
+                if (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING) lastPos = p.currentPosition
+                if (panel.visibility == View.VISIBLE) updateVodInfo()
+                if (tickCount % 10 == 0) saveProgress()
+            }
+            handler.postDelayed(this, 1000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,18 +77,60 @@ class PlayerActivity : Activity() {
         surface = SurfaceView(this)
         root.addView(surface, FrameLayout.LayoutParams(-1, -1))
         spinner = ProgressBar(this).apply { visibility = View.GONE }
-        root.addView(spinner, FrameLayout.LayoutParams(Ui.dp(this, 72), Ui.dp(this, 72), Gravity.CENTER))
-        info = TextView(this).apply {
-            textSize = 24f
-            setTextColor(Color.parseColor(Ui.TEXT))
-            setBackgroundColor(Color.parseColor("#CC0A0E1A"))
-            setPadding(Ui.dp(this@PlayerActivity, 24), Ui.dp(this@PlayerActivity, 16), Ui.dp(this@PlayerActivity, 24), Ui.dp(this@PlayerActivity, 16))
+        root.addView(spinner, FrameLayout.LayoutParams(Skin.dp(this, 48), Skin.dp(this, 48), Gravity.CENTER))
+
+        panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Skin.card(this@PlayerActivity, 18, 0xE607030F.toInt(), Skin.LINE)
+            setPadding(Skin.dp(this@PlayerActivity, 24), Skin.dp(this@PlayerActivity, 16), Skin.dp(this@PlayerActivity, 24), Skin.dp(this@PlayerActivity, 14))
             visibility = View.GONE
         }
-        val lp = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START)
-        lp.setMargins(Ui.dp(this, 48), 0, Ui.dp(this, 48), Ui.dp(this, 40))
-        root.addView(info, lp)
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        line1 = Skin.oneLine(Skin.text(this, "", 26f, Skin.TEXT, true))
+        line1Right = Skin.text(this, "", 16f, Skin.MUTED)
+        head.addView(line1, LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(line1Right)
+        panel.addView(head)
+        line2 = Skin.oneLine(Skin.text(this, "", 19f, Skin.TEXT)).apply { setPadding(0, Skin.dp(this@PlayerActivity, 6), 0, Skin.dp(this@PlayerActivity, 6)) }
+        panel.addView(line2)
+        bar = BarView(this)
+        panel.addView(bar, LinearLayout.LayoutParams(-1, Skin.dp(this, 6)))
+        line3 = Skin.oneLine(Skin.text(this, "", 17f, Skin.MUTED)).apply { setPadding(0, Skin.dp(this@PlayerActivity, 8), 0, 0) }
+        panel.addView(line3)
+        hintLine = Skin.oneLine(Skin.text(this, "", 13f, Skin.DIM)).apply { setPadding(0, Skin.dp(this@PlayerActivity, 6), 0, 0) }
+        panel.addView(hintLine)
+        root.addView(panel, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
+            setMargins(Skin.dp(this@PlayerActivity, 36), 0, Skin.dp(this@PlayerActivity, 36), Skin.dp(this@PlayerActivity, 28))
+        })
+
+        toast = Skin.text(this, "", 22f, Skin.TEXT, true).apply {
+            background = Skin.card(this@PlayerActivity, 14, 0xE607030F.toInt(), Skin.LINE)
+            setPadding(Skin.dp(this@PlayerActivity, 18), Skin.dp(this@PlayerActivity, 10), Skin.dp(this@PlayerActivity, 18), Skin.dp(this@PlayerActivity, 10))
+            visibility = View.GONE
+        }
+        root.addView(toast, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = Skin.dp(this@PlayerActivity, 40) })
+
+        matchBox = Skin.text(this, "", 15f, Skin.TEXT).apply {
+            background = Skin.card(this@PlayerActivity, 14, 0xE607030F.toInt(), Skin.LINE)
+            setPadding(Skin.dp(this@PlayerActivity, 16), Skin.dp(this@PlayerActivity, 12), Skin.dp(this@PlayerActivity, 16), Skin.dp(this@PlayerActivity, 12))
+            visibility = View.GONE
+        }
+        root.addView(matchBox, FrameLayout.LayoutParams(Skin.dp(this, 330), -2, Gravity.TOP or Gravity.END).apply {
+            topMargin = Skin.dp(this@PlayerActivity, 30); rightMargin = Skin.dp(this@PlayerActivity, 30)
+        })
+
+        menu = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Skin.card(this@PlayerActivity, 18, 0xF007030F.toInt(), Skin.CYAN)
+            setPadding(Skin.dp(this@PlayerActivity, 20), Skin.dp(this@PlayerActivity, 16), Skin.dp(this@PlayerActivity, 20), Skin.dp(this@PlayerActivity, 12))
+            visibility = View.GONE
+        }
+        root.addView(menu, FrameLayout.LayoutParams(Skin.dp(this, 420), -2, Gravity.CENTER))
         setContentView(root)
+        live = Session.live
         ext = Store.ext(this)
     }
 
@@ -75,7 +150,11 @@ class PlayerActivity : Activity() {
                 spinner.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
                 if (state == Player.STATE_READY) {
                     retries = 0
-                    if (ext != Store.ext(this@PlayerActivity)) Store.setExt(this@PlayerActivity, ext)
+                    if (live && ext != Store.ext(this@PlayerActivity)) Store.setExt(this@PlayerActivity, ext)
+                }
+                if (state == Player.STATE_ENDED && !live) {
+                    markFinished()
+                    finish()
                 }
             }
 
@@ -84,88 +163,343 @@ class PlayerActivity : Activity() {
             }
         })
         player = p
-        startChannel(resetRetries = true)
+        handler.postDelayed(tick, 1000)
+        if (live) startChannel(true) else startVod()
     }
 
     override fun onStop() {
         super.onStop()
+        saveProgress()
         handler.removeCallbacksAndMessages(null)
         player?.release()
         player = null
     }
 
+    // ------------------------------------------------------------------ live
     private fun current(): Chan? = Session.channels.getOrNull(Session.index)
 
     private fun startChannel(resetRetries: Boolean) {
         val ch = current()
-        val xt = Session.xt
+        val xt = Session.xt ?: Store.xtream(this)
         val p = player
         if (ch == null || xt == null || p == null) {
             finish()
             return
         }
+        Session.xt = xt
         if (resetRetries) {
             retries = 0
             triedAlt = false
         }
-        showInfo(ch)
+        showLiveInfo(ch)
         p.setMediaItem(MediaItem.fromUri(xt.streamUrl(ch.id, ext)))
         p.prepare()
         p.playWhenReady = true
+        Store.putStr(this, "last_chan", ch.id)
+        History.save(this, Hist("live:" + ch.id, "live", ch.name, ch.cat, ch.id, ext, 0, 0, System.currentTimeMillis() / 1000))
     }
 
-    private fun onStreamError() {
-        if (!triedAlt) {
-            triedAlt = true
-            ext = if (ext == "ts") "m3u8" else "ts"
-            startChannel(resetRetries = false)
-            return
-        }
-        if (retries < 4) {
-            retries++
-            info.text = "Reconnecting...  (${current()?.name ?: ""})"
-            info.visibility = View.VISIBLE
-            handler.postDelayed({ if (player != null) startChannel(resetRetries = false) }, 3000)
-            return
-        }
-        info.text = "This channel won't play right now.  Press Up / Down for another channel, or Back."
-        info.visibility = View.VISIBLE
-        handler.removeCallbacks(hideInfo)
-    }
-
-    private fun showInfo(ch: Chan) {
-        info.text = ch.name
-        info.visibility = View.VISIBLE
-        handler.removeCallbacks(hideInfo)
-        handler.postDelayed(hideInfo, 6000)
-        val xt = Session.xt ?: return
+    private fun showLiveInfo(ch: Chan) {
+        panel.visibility = View.VISIBLE
+        if (Session.matchPanel.isNotEmpty() && live) {
+            matchBox.text = Session.matchPanel
+            matchBox.visibility = View.VISIBLE
+        } else matchBox.visibility = View.GONE
+        line1.text = ch.name
+        line1Right.text = ch.cat
+        val num = Session.index + 1
+        line1.text = "$num   ${ch.name}"
+        line2.text = ""
+        line3.text = ""
+        bar.pct = 0
+        hintLine.text = "Up / Down  change channel     OK  info     Menu  audio and subtitles     Back  guide"
+        handler.removeCallbacks(hidePanel)
+        handler.postDelayed(hidePanel, 6000)
         val token = ++epgToken
-        Thread {
-            val progs = try { xt.shortEpg(ch.id) } catch (e: Exception) { emptyList() }
-            runOnUiThread {
+        val now = System.currentTimeMillis() / 1000
+        val local = if (ch.epg.isNotEmpty()) Session.epg.nowNext(ch.epg, now, 1) else null
+        if (local != null && local.first != null) {
+            fillNowNext(local.first, local.second.firstOrNull(), now)
+            return
+        }
+        val xt = Session.xt ?: return
+        Bg.run {
+            val progs = try {
+                xt.shortEpg(ch.id)
+            } catch (e: Exception) {
+                emptyList()
+            }
+            Bg.ui {
                 if (token == epgToken && !isFinishing) {
-                    info.text = ch.name + "\n" + Ui.nowNext(progs).first
+                    val cur = progs.firstOrNull { it.start <= now && now < it.stop }?.let { EpgProg(it.start, it.stop, it.title) }
+                    val nxt = progs.firstOrNull { it.start > now }?.let { EpgProg(it.start, it.stop, it.title) }
+                    fillNowNext(cur, nxt, now)
                 }
             }
-        }.start()
+        }
+    }
+
+    private fun fillNowNext(cur: EpgProg?, nxt: EpgProg?, now: Long) {
+        if (cur != null) {
+            line2.text = "Now  " + cur.title + "  (" + Skin.hhmm(cur.start) + " - " + Skin.hhmm(cur.stop) + ")"
+            bar.pct = (((now - cur.start) * 100) / Math.max(1L, cur.stop - cur.start)).toInt()
+        } else {
+            line2.text = "Nothing listed right now"
+        }
+        line3.text = if (nxt != null) "Next  " + Skin.hhmm(nxt.start) + "  " + nxt.title else ""
     }
 
     private fun change(delta: Int) {
         val n = Session.channels.size
         if (n == 0) return
         Session.index = (Session.index + delta + n) % n
-        handler.removeCallbacksAndMessages(null)
-        startChannel(resetRetries = true)
+        handler.removeCallbacks(hidePanel)
+        startChannel(true)
+    }
+
+    // ------------------------------------------------------------------ movies and episodes
+    private fun startVod() {
+        val p = player
+        if (p == null || Session.vodUrl.isEmpty()) {
+            finish()
+            return
+        }
+        lastPos = Session.vodResume
+        p.setMediaItem(MediaItem.fromUri(Session.vodUrl), lastPos.coerceAtLeast(0L))
+        p.prepare()
+        p.playWhenReady = true
+        showVodInfo()
+    }
+
+    private fun showVodInfo() {
+        panel.visibility = View.VISIBLE
+        line1.text = Session.vodTitle
+        line1Right.text = ""
+        line3.text = ""
+        hintLine.text = "Left / Right  skip     OK  pause     Menu  audio and subtitles     Back  list"
+        updateVodInfo()
+        handler.removeCallbacks(hidePanel)
+        if (player?.isPlaying == true) handler.postDelayed(hidePanel, 5000)
+    }
+
+    private fun fmt(ms: Long): String {
+        val s = Math.max(0L, ms / 1000)
+        val h = s / 3600
+        val m = (s % 3600) / 60
+        val sec = s % 60
+        return if (h > 0) String.format(Locale.UK, "%d:%02d:%02d", h, m, sec) else String.format(Locale.UK, "%d:%02d", m, sec)
+    }
+
+    private fun updateVodInfo() {
+        val p = player ?: return
+        val dur = if (p.duration == C.TIME_UNSET) 0L else p.duration
+        val pos = p.currentPosition
+        line2.text = (if (p.playWhenReady) "" else "Paused   ") + fmt(pos) + (if (dur > 0) "  /  " + fmt(dur) else "")
+        bar.pct = if (dur > 0) ((pos * 100) / dur).toInt() else 0
+    }
+
+    private fun saveProgress() {
+        if (live) return
+        val p = player
+        val dur = if (p == null || p.duration == C.TIME_UNSET) 0L else p.duration
+        val pos = if (p != null && p.currentPosition > 0) p.currentPosition else lastPos
+        if (Session.vodKey.isEmpty()) return
+        val old = History.find(this, Session.vodKey)
+        History.save(
+            this,
+            Hist(
+                Session.vodKey, if (Session.vodKey.startsWith("movie:")) "movie" else "episode", Session.vodTitle,
+                old?.sub ?: "", old?.id ?: Session.vodKey.substringAfter(':'), old?.ext ?: "", pos, dur,
+                System.currentTimeMillis() / 1000, old?.seriesId ?: ""
+            )
+        )
+        Session.vodResume = pos
+    }
+
+    private fun markFinished() {
+        val old = History.find(this, Session.vodKey) ?: return
+        History.save(this, old.copy(pos = old.dur, ts = System.currentTimeMillis() / 1000))
+    }
+
+    private fun seek(deltaMs: Long) {
+        val p = player ?: return
+        val dur = if (p.duration == C.TIME_UNSET) Long.MAX_VALUE else p.duration
+        val target = (p.currentPosition + deltaMs).coerceIn(0L, Math.max(0L, dur - 2000))
+        p.seekTo(target)
+        lastPos = target
+        showVodInfo()
+    }
+
+    // ------------------------------------------------------------------ errors
+    private val retryDelays = longArrayOf(2000, 4000, 8000, 15000, 30000)
+
+    private fun onStreamError() {
+        if (live && !triedAlt) {
+            triedAlt = true
+            ext = if (ext == "ts") "m3u8" else "ts"
+            startChannel(false)
+            return
+        }
+        if (retries < retryDelays.size) {
+            val wait = retryDelays[retries]
+            retries++
+            panel.visibility = View.VISIBLE
+            line2.text = "Reconnecting...  (try $retries of ${retryDelays.size})"
+            handler.removeCallbacks(hidePanel)
+            handler.postDelayed({
+                if (player != null) {
+                    if (live) startChannel(false) else {
+                        player?.setMediaItem(MediaItem.fromUri(Session.vodUrl), lastPos.coerceAtLeast(0L))
+                        player?.prepare()
+                        player?.playWhenReady = true
+                    }
+                }
+            }, wait)
+            return
+        }
+        panel.visibility = View.VISIBLE
+        line2.text = if (live) "This channel won't play right now. Press Up / Down for another channel, or Back."
+        else "This title won't play right now. Press Back and try again later."
+        handler.removeCallbacks(hidePanel)
+    }
+
+    // ------------------------------------------------------------------ audio and subtitle menu
+    private fun menuVisible() = menu.visibility == View.VISIBLE
+
+    private fun closeMenu() {
+        menu.visibility = View.GONE
+        menu.removeAllViews()
+    }
+
+    private fun openMenu(heading: String, choices: List<Pair<String, () -> Unit>>) {
+        menu.removeAllViews()
+        menu.addView(Skin.oneLine(Skin.text(this, heading, 16f, Skin.CYAN, true)).apply { setPadding(0, 0, 0, Skin.dp(this@PlayerActivity, 10)) })
+        var first: View? = null
+        for ((label, action) in choices) {
+            val c = Skin.choice(this, label) { action() }
+            menu.addView(c, Skin.gapParams(this, bottomDp = 6))
+            if (first == null) first = c
+        }
+        menu.visibility = View.VISIBLE
+        first?.requestFocus()
+    }
+
+    private fun mainMenu() {
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items.add(Pair("Audio") { trackMenu(C.TRACK_TYPE_AUDIO, "Audio") })
+        items.add(Pair("Subtitles") { trackMenu(C.TRACK_TYPE_TEXT, "Subtitles") })
+        if (live) items.add(Pair("Restart this channel") { closeMenu(); startChannel(true) })
+        else items.add(Pair("Start over") { closeMenu(); player?.seekTo(0); lastPos = 0; showVodInfo() })
+        items.add(Pair("Close") { closeMenu() })
+        openMenu(if (live) "Live TV" else Session.vodTitle, items)
+    }
+
+    private fun trackLabel(lang: String?, label: String?, channels: Int, n: Int): String {
+        val l = if (!lang.isNullOrBlank() && lang != "und") Locale(lang).displayLanguage.ifBlank { lang } else ""
+        val base = l.ifEmpty { label ?: "Track $n" }
+        val ch = when {
+            channels >= 6 -> " (5.1)"
+            channels == 2 -> " (stereo)"
+            else -> ""
+        }
+        return base + ch
+    }
+
+    private fun trackMenu(type: Int, heading: String) {
+        val p = player ?: return
+        val choices = ArrayList<Pair<String, () -> Unit>>()
+        if (type == C.TRACK_TYPE_TEXT) {
+            choices.add(Pair("Off") {
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                closeMenu()
+            })
+        }
+        var n = 0
+        for (g in p.currentTracks.groups) {
+            if (g.type != type) continue
+            for (i in 0 until g.length) {
+                if (!g.isTrackSupported(i)) continue
+                n++
+                val f = g.getTrackFormat(i)
+                val name = trackLabel(f.language, f.label, f.channelCount, n) + if (g.isTrackSelected(i)) "   (on)" else ""
+                val group = g
+                val idx = i
+                choices.add(Pair(name) {
+                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(type, false)
+                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, idx))
+                        .build()
+                    closeMenu()
+                })
+            }
+        }
+        if (n == 0) choices.add(Pair("Nothing to choose from yet") { closeMenu() })
+        choices.add(Pair("Back") { mainMenu() })
+        openMenu(heading, choices)
+    }
+
+    // ------------------------------------------------------------------ keys
+    private fun flash(text: String) {
+        toast.text = text
+        toast.visibility = View.VISIBLE
+        handler.removeCallbacks(hideToast)
+        handler.postDelayed(hideToast, 1500)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (menuVisible()) {
+            closeMenu()
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            if (menuVisible()) closeMenu() else mainMenu()
+            return true
+        }
+        if (menuVisible()) return super.onKeyDown(keyCode, event) // the menu's own buttons use the remote
+        val rep = event?.repeatCount ?: 0
         when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { change(-1); return true }
-            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { change(1); return true }
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                current()?.let { showInfo(it) }
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> {
+                if (live) change(-1) else showVodInfo()
                 return true
             }
+            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                if (live) change(1) else panel.visibility = View.GONE
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                if (!live) {
+                    seek(if (rep > 6) -60000L else -10000L)
+                    flash("-" + (if (rep > 6) "60" else "10") + " s")
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                if (!live) {
+                    seek(if (rep > 6) 60000L else 10000L)
+                    flash("+" + (if (rep > 6) "60" else "10") + " s")
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                if (rep == 0) {
+                    if (live) {
+                        current()?.let { showLiveInfo(it) }
+                    } else {
+                        val p = player
+                        if (p != null) p.playWhenReady = !p.playWhenReady
+                        showVodInfo()
+                    }
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PLAY -> { player?.playWhenReady = true; return true }
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> { player?.playWhenReady = false; if (!live) showVodInfo(); return true }
         }
         return super.onKeyDown(keyCode, event)
     }

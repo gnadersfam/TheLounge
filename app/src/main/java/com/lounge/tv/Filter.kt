@@ -1,7 +1,7 @@
 package com.lounge.tv
 
 /** One live channel. [tag] is the country tag (UK, US, ...), [epg] the guide id. */
-data class Chan(val id: String, val name: String, val cat: String, val tag: String, val epg: String)
+data class Chan(val id: String, val name: String, val cat: String, val tag: String, val epg: String, val icon: String = "")
 
 /**
  * English-only detection and "tidy list" rules, ported from the PC app's Live TV tab (livetv.py):
@@ -10,7 +10,7 @@ data class Chan(val id: String, val name: String, val cat: String, val tag: Stri
 object Filter {
     private val IC = RegexOption.IGNORE_CASE
 
-    private val ENGLISH_TAGS = mapOf(
+    val ENGLISH_TAGS = mapOf(
         "UK" to "UK", "GB" to "UK", "US" to "US", "USA" to "US", "CA" to "CA", "CAN" to "CA",
         "AU" to "AU", "AUS" to "AU", "IE" to "IE", "IRL" to "IE", "NZ" to "NZ", "EN" to "EN"
     )
@@ -36,7 +36,7 @@ object Filter {
     private val NAME_START_RE = Regex("""^\s*[\[\(\{|]*\s*([A-Za-z]{2,6})\s*[\]\)\}|:\-]""")
     private val NAME_END_RE = Regex("""[\[\(\{]([A-Za-z]{2,6})[\]\)\}]\s*\z""")
 
-    private fun tagFrom(text: String?): String {
+    fun tagFrom(text: String?): String {
         if (text.isNullOrEmpty()) return ""
         var eng = ""
         var foreign = false
@@ -63,7 +63,7 @@ object Filter {
         return ""
     }
 
-    private fun nameTag(name: String): String {
+    fun nameTag(name: String): String {
         val parts = ArrayList<String>()
         NAME_START_RE.find(name)?.let { parts.add(it.groupValues[1]) }
         NAME_END_RE.find(name)?.let { parts.add(it.groupValues[1]) }
@@ -107,7 +107,7 @@ object Filter {
     private fun isJunk(name: String, cat: String): Boolean =
         JUNK_RE.containsMatchIn(name) || JUNK_RE.containsMatchIn(cat) || DIVIDER_RE.containsMatchIn(name)
 
-    private fun catRank(category: String): Int {
+    fun catRank(category: String): Int {
         if (LATE_CAT_RE.containsMatchIn(category) && !SPORT_RE.containsMatchIn(category)) return CAT_PRIORITY.size + 1
         for ((i, re) in CAT_PRIORITY.withIndex()) if (re.containsMatchIn(category)) return i
         return CAT_PRIORITY.size
@@ -175,5 +175,20 @@ object Filter {
                 { it.name.lowercase() }
             )
         )
+    }
+
+    /**
+     * Default category order for the guide: UK first, then Ireland, US...; inside a country the everyday
+     * categories first (General, News, Sport...), then A-Z.
+     */
+    fun categoryOrder(rows: List<Chan>): List<String> {
+        val country = HashMap<String, Int>()
+        for (r in rows) {
+            if (r.cat.isEmpty()) continue
+            val c = COUNTRY_ORDER[r.tag] ?: 9
+            val prev = country[r.cat]
+            if (prev == null || c < prev) country[r.cat] = c
+        }
+        return country.keys.sortedWith(compareBy<String>({ country[it] ?: 9 }, { catRank(it) }, { it.lowercase() }))
     }
 }

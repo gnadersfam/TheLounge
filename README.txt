@@ -1,26 +1,29 @@
-THE LOUNGE - Firestick test version (Live TV + playback only)
-==============================================================
+THE LOUNGE - full version (Live TV, Movies & Shows, Football, Spotify remote, Settings)
+=====================================================================================
 
-What it does
-  - Sign in once with your IPTV server / username / password (typed on the Firestick, saved only on the Firestick)
-  - English-only Live TV list, same tidy rules as the PC app (no "no event" / Amazon channels, UK regional copies
-    hidden except Scotland, UK channels at the top)
-  - Highlight a channel to see what's on now / next; press OK to watch
-  - While watching: Up / Down = change channel, OK = show what's on, Back = return to the list
-  - Reconnects by itself if the stream drops
+NO keys or logins are in these files. You type them on your phone ("Pair with phone" in the app);
+they are saved only on the Firestick. So it is safe for this to sit in a public GitHub repository.
 
-Your login is NOT in these files, so it is safe for this to sit in a public GitHub repository.
+UPLOAD TO GITHUB (repo gnadersfam/TheLounge)
+  1. On the repo page: Add file > Upload files. Drag in everything from this folder EXCEPT the .github folder.
+     (Include the "docs" folder.) Commit.
+  2. The .github folder must be added by hand (Windows drag-and-drop skips dot-folders):
+     Add file > Create new file, name it   .github/workflows/build.yml   and paste the contents of build.yml
+     from this folder (replace the old one). Commit.
+  3. Actions tab: wait for a green tick (~5 min). If it goes red, copy the red error text to Claude.
+  4. Install on the Firestick with Downloader:
+     https://github.com/gnadersfam/TheLounge/releases/download/latest/TheLounge.apk
+  Later versions: the app shows "Update available" on Home - press it and it installs over the old one.
+  (The signing key in the repo is deliberately public; it is not a secret and just lets updates install over each other.)
 
-How to get the app onto the Firestick
-  1. On a computer, sign in at github.com (free account) -> New repository -> name it TheLounge -> choose PUBLIC -> Create.
-  2. On the new repo page click "uploading an existing file". Open this unzipped folder and drag EVERYTHING in it
-     (including the .github folder) into the page. Click "Commit changes".
-  3. Click the "Actions" tab. A run called "Build The Lounge APK" starts. Wait about 5 minutes for a green tick.
-     (If it goes red, click it and copy the error text to Claude.)
-  4. The finished app is at:
-       https://github.com/YOUR-USERNAME/TheLounge/releases/download/latest/TheLounge.apk
-  5. On the Firestick: Settings > My Fire TV > Developer options > Install unknown apps > allow Downloader.
-     Open Downloader, type that web address, and install.
-  6. Open The Lounge from Your Apps & Channels.
+SPOTIFY (one-time)
+  - Needs Spotify Premium and the official Spotify app on the Firestick.
+  - Repo Settings > Pages > Branch: main, Folder: /docs > Save.
+  - At developer.spotify.com make a free app. Add this Redirect URI exactly:
+      https://gnadersfam.github.io/TheLounge/spotify.html
+  - In The Lounge > Music follow the on-screen steps (you type the Client ID on your phone).
+  - Music may stop when the Firestick leaves the app; background play is not guaranteed.
 
-Tip: typing on the Firestick is easiest with the Fire TV phone app's keyboard.
+FOOTBALL
+  - Pair your football-data.org key on your phone, then Football > Refresh now (data only updates when you press it).
+  - Finding a match's channel needs Live TV opened once so the guide is loaded.
