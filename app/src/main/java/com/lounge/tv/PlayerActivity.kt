@@ -20,6 +20,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import java.util.Locale
@@ -143,7 +144,14 @@ class PlayerActivity : Activity() {
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15000)
             .setReadTimeoutMs(15000)
+        // keep a sensible amount ready (the default holds well over 100MB, too much for a Fire TV Stick)
+        val lc = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(8000, 30000, 1500, 4000)
+            .setTargetBufferBytes(32 * 1024 * 1024)
+            .setPrioritizeTimeOverSizeThresholds(false)
+            .build()
         val p = ExoPlayer.Builder(this)
+            .setLoadControl(lc)
             .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
             .build()
         p.setVideoSurfaceView(surface)

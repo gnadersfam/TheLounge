@@ -264,6 +264,7 @@ class MainActivity : Activity() {
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
             Crash.log("Memory is short (level $level)", RuntimeException(Crash.memLine() + "  at " + currentName))
             Img.clear()
+            if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) (screens["live"] as? LiveScreen)?.trimMemory()
             System.gc()
         }
     }

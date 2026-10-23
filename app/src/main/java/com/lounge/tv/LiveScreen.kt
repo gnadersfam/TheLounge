@@ -14,6 +14,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import java.io.IOException
@@ -459,7 +460,14 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
                 .setAllowCrossProtocolRedirects(true)
                 .setConnectTimeoutMs(10000)
                 .setReadTimeoutMs(10000)
-            p = ExoPlayer.Builder(act).setMediaSourceFactory(DefaultMediaSourceFactory(factory)).build()
+            // the small picture only needs a few seconds kept ready; the default keeps far more (well over 100MB), which
+            // made the Fire TV run short of memory and close the app
+            val lc = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(1500, 4000, 500, 1000)
+                .setTargetBufferBytes(6 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(false)
+                .build()
+            p = ExoPlayer.Builder(act).setLoadControl(lc).setMediaSourceFactory(DefaultMediaSourceFactory(factory)).build()
             p.setVideoSurfaceView(surface)
             p.addListener(object : Player.Listener {
                 override fun onRenderedFirstFrame() {
@@ -477,6 +485,11 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
         p.setMediaItem(MediaItem.fromUri(xt.streamUrl(ch.id, Store.ext(act))))
         p.prepare()
         p.playWhenReady = true
+    }
+
+    /** The system is critically short of memory: let go of the preview picture. */
+    fun trimMemory() {
+        releasePreview()
     }
 
     private fun releasePreview() {
