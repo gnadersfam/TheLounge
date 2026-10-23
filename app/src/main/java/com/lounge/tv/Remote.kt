@@ -183,7 +183,7 @@ object Remote {
                     "/k" -> { key(body["key"].orEmpty()); out = reply(true, "") }
                     "/vol" -> { volume(body["d"].orEmpty()); out = reply(true, "") }
                     "/ch" -> out = channel(body["d"].orEmpty())
-                    "/seek" -> { seek(body["f"]?.toDoubleOrNull() ?: -1.0); out = reply(true, "") }
+                    "/seek" -> { seek(body["ms"]?.toLongOrNull() ?: -1L); out = reply(true, "") }
                     "/open" -> { openPage(body["p"].orEmpty()); out = reply(true, "") }
                     "/find" -> out = find(query["q"].orEmpty())
                     "/play" -> out = play(body["t"].orEmpty(), body["id"].orEmpty())
@@ -237,6 +237,7 @@ object Remote {
         val max = Math.max(1, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
         m["vol"] = am.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / max
         m["muted"] = if (Build.VERSION.SDK_INT >= 23) am.isStreamMute(AudioManager.STREAM_MUSIC) else false
+        m["fixed"] = am.isVolumeFixed
         m["page"] = onMain("") { main?.currentName ?: "" }
         val info = onMain(emptyMap<String, Any?>()) { player?.remoteInfo() ?: emptyMap() }
         m.putAll(info)
@@ -289,6 +290,21 @@ object Remote {
         val c = app ?: return
         val am = c.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val s = AudioManager.STREAM_MUSIC
+        if (am.isVolumeFixed) {
+            // a Fire TV Stick has "fixed" volume: the level belongs to the TV, so press the volume keys (the Stick passes them to the TV)
+            val code = when (d) {
+                "up" -> KeyEvent.KEYCODE_VOLUME_UP
+                "down" -> KeyEvent.KEYCODE_VOLUME_DOWN
+                "mute" -> KeyEvent.KEYCODE_VOLUME_MUTE
+                else -> return
+            }
+            try {
+                inst.sendKeyDownUpSync(code)
+            } catch (e: Throwable) {
+                Crash.log("Phone remote volume key", e)
+            }
+            return
+        }
         when (d) {
             "up" -> am.adjustStreamVolume(s, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
             "down" -> am.adjustStreamVolume(s, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
@@ -309,9 +325,9 @@ object Remote {
         return if (ok) reply(true, "") else reply(false, "Start a live channel on the TV first")
     }
 
-    private fun seek(f: Double) {
-        if (f < 0.0 || f > 1.0) return
-        onMain(Unit) { player?.remoteSeek(f); Unit }
+    private fun seek(ms: Long) {
+        if (ms < 0L) return
+        onMain(Unit) { player?.remoteSeek(ms); Unit }
     }
 
     private fun openPage(p: String) {

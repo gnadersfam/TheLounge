@@ -177,6 +177,7 @@ class PlayerActivity : Activity() {
             .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
             .build()
         p.setVideoSurfaceView(surface)
+        p.setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
         p.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 spinner.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
@@ -300,15 +301,23 @@ class PlayerActivity : Activity() {
         if (live && player != null) change(delta)
     }
 
-    fun remoteSeek(f: Double) {
+    fun remoteSeek(ms: Long) {
         val p = player ?: return
         if (live) return
         val d = p.duration
-        if (d == C.TIME_UNSET || d <= 0L) return
-        val t = (d * f).toLong().coerceIn(0L, Math.max(0L, d - 2000L))
+        val t = if (d == C.TIME_UNSET || d <= 0L) ms else ms.coerceIn(0L, Math.max(0L, d - 2000L))
+        pendingSeek = 0L
+        p.setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
         p.seekTo(t)
         lastPos = t
         showVodInfo()
+        // if the provider's file can't be skipped inside, the player may land at the start: leave a note in Help
+        handler.postDelayed({
+            val pp = player
+            if (pp != null && t > 60000L && pp.currentPosition < 10000L) {
+                Crash.log("Skip bar landed near the start", RuntimeException("asked " + t + " ms, got " + pp.currentPosition + " ms, length " + pp.duration + " ms"))
+            }
+        }, 5000)
     }
 
     fun remoteInfo(): Map<String, Any?> {

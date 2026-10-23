@@ -214,7 +214,7 @@ function fmt(ms){
 var dragging=false;
 var seek=byId('seek');
 seek.addEventListener('input',function(){dragging=true;if(seek.dur)byId('tp').textContent=fmt(seek.dur*seek.value/1000);});
-seek.addEventListener('change',function(){buzz();api('/seek',{f:seek.value/1000});setTimeout(function(){dragging=false;poll();},600);});
+seek.addEventListener('change',function(){buzz();api('/seek',{ms:Math.round((seek.dur||0)*seek.value/1000)});setTimeout(function(){dragging=false;poll();},600);});
 
 function apply(s){
   if(!s)return;
@@ -231,8 +231,8 @@ function apply(s){
   }
   byId('td').textContent=canSeek?fmt(s.dur):(s.live&&playing?'Live':'0:00');
   byId('th').textContent=canSeek?'Drag to skip':(s.live&&playing?'Live TV':'Skip bar');
-  byId('vbar').style.width=(s.muted?0:s.vol)+'%';
-  byId('vtxt').textContent=s.muted?'Muted':s.vol+'%';
+  byId('vbar').style.width=s.fixed?'0%':((s.muted?0:s.vol)+'%');
+  byId('vtxt').textContent=s.fixed?'Volume goes to the TV':(s.muted?'Muted':s.vol+'%');
   byId('mute').className=s.muted?'btn mute on':'btn mute';
   if(playing&&s.live){byId('cn').textContent=(s.num?s.num+' · ':'')+(s.title||'');byId('cs').textContent=s.sub||'';}
   else{byId('cn').textContent='No live channel';byId('cs').textContent=playing?'Playing a film or show':'Start a channel on the TV';}
