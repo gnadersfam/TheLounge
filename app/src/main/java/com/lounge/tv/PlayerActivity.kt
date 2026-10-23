@@ -201,12 +201,14 @@ class PlayerActivity : Activity() {
             }
         })
         player = p
+        Remote.player = this
         handler.postDelayed(tick, 1000)
         if (live) startChannel(true) else startVod()
     }
 
     override fun onStop() {
         super.onStop()
+        if (Remote.player === this) Remote.player = null
         saveProgress()
         handler.removeCallbacksAndMessages(null)
         player?.release()
@@ -289,6 +291,47 @@ class PlayerActivity : Activity() {
             line2.text = "Nothing listed right now"
         }
         line3.text = if (nxt != null) "Next  " + Skin.hhmm(nxt.start) + "  " + nxt.title else ""
+    }
+
+    // ---- used by the phone remote (always called on the main thread)
+    fun remoteIsLive(): Boolean = live && player != null
+
+    fun remoteChange(delta: Int) {
+        if (live && player != null) change(delta)
+    }
+
+    fun remoteSeek(f: Double) {
+        val p = player ?: return
+        if (live) return
+        val d = p.duration
+        if (d == C.TIME_UNSET || d <= 0L) return
+        val t = (d * f).toLong().coerceIn(0L, Math.max(0L, d - 2000L))
+        p.seekTo(t)
+        lastPos = t
+        showVodInfo()
+    }
+
+    fun remoteInfo(): Map<String, Any?> {
+        val m = LinkedHashMap<String, Any?>()
+        val p = player
+        m["playing"] = p != null
+        m["live"] = live
+        if (p != null) {
+            if (live) {
+                val ch = current()
+                m["title"] = ch?.name ?: ""
+                m["num"] = Session.index + 1
+                val now = System.currentTimeMillis() / 1000
+                val on = if (ch != null && ch.epg.isNotEmpty()) Session.epg.nowNext(ch.epg, now, 1).first?.title else null
+                m["sub"] = on ?: ""
+            } else {
+                m["title"] = Session.vodTitle
+                m["pos"] = p.currentPosition
+                m["dur"] = if (p.duration == C.TIME_UNSET) 0L else p.duration
+            }
+            m["paused"] = !p.playWhenReady
+        }
+        return m
     }
 
     /** Left on a live channel: jump back to the channel you were on before this one. */

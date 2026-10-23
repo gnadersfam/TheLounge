@@ -109,6 +109,21 @@ class SettingsScreen(act: MainActivity) : Screen(act) {
             rebuild()
         }
 
+        col.addView(h2("Phone remote"))
+        val remoteUrl = Remote.address(act)
+        if (remoteUrl.isEmpty()) {
+            col.addView(note("The phone remote couldn't start. Check the Fire TV is on Wi-Fi, then reopen The Lounge.", Skin.AMBER))
+        } else {
+            col.addView(note("Put your phone on the same Wi-Fi, then scan this code or type the address into your phone's browser."))
+            col.addView(Skin.text(act, remoteUrl, 17f, Skin.CYAN, true).apply { setPadding(Skin.dp(act, 4), Skin.dp(act, 4), 0, Skin.dp(act, 6)) })
+            val qrBmp = Remote.qr(remoteUrl, 240)
+            if (qrBmp != null) {
+                col.addView(android.widget.ImageView(act).apply { setImageBitmap(qrBmp) },
+                    LinearLayout.LayoutParams(Skin.dp(act, 190), Skin.dp(act, 190)).apply { leftMargin = Skin.dp(act, 4); bottomMargin = Skin.dp(act, 8) })
+            }
+            item("Make a new remote PIN", "Use this if someone else on your Wi-Fi should not have the old address") { Remote.newPin(act); rebuild() }
+        }
+
         col.addView(h2("Spotify"))
         val connected = Spotify.connected(act)
         col.addView(note("Spotify: " + if (connected) "connected" else if (Store.spotifyClientId(act).isEmpty()) "needs the app ID (see the Music page)" else "not connected yet (see the Music page)"))

@@ -54,6 +54,8 @@ class MainActivity : Activity() {
         Crash.install(this)
         Skin.load(this)
         TeamLogos.ensure(this)
+        Remote.main = this
+        Remote.start(this)
         window.setBackgroundDrawable(ColorDrawable(Skin.BG))
         val root = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         rail = buildRail()
@@ -269,6 +271,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (Remote.main === this) Remote.main = null
         Bg.cancel(clockTick)
         Updates.shutdown()
     }
