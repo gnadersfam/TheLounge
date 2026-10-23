@@ -57,7 +57,7 @@ class FootPages(private val h: FootHost) {
         val a = Model.agreement(p)
         val cells = ArrayList<Cell>()
         cells.add(Cell(Skin.dayTime(ko(fv.fx)), 1.55f, color = Skin.CYAN))
-        cells.add(Cell("${fv.fx.home} v ${fv.fx.away}", 2.7f, bold = true))
+        cells.add(Cell("${fv.fx.home} v ${fv.fx.away}", 2.7f, bold = true, crest = listOf(fv.fx.home, fv.fx.away)))
         if (showLeague) cells.add(Cell(fv.league, 0.5f, color = Skin.DIM))
         cells.add(Cell("${FootUi.pct(p.home)}  ${FootUi.pct(p.draw)}  ${FootUi.pct(p.away)}", 1.5f, Gravity.CENTER_HORIZONTAL))
         cells.add(Cell(a?.label ?: "", 1.25f, color = agreeColor(a)))
@@ -79,7 +79,7 @@ class FootPages(private val h: FootHost) {
                 Cell("D", 0.5f, FootUi.RIGHT), Cell("L", 0.5f, FootUi.RIGHT), Cell("GF", 0.55f, FootUi.RIGHT), Cell("GA", 0.55f, FootUi.RIGHT),
                 Cell("GD", 0.6f, FootUi.RIGHT), Cell("Pts", 0.6f, FootUi.RIGHT), Cell("xGF", 0.75f, FootUi.RIGHT), Cell("xGA", 0.75f, FootUi.RIGHT),
                 Cell("xGD", 0.75f, FootUi.RIGHT)), header = true))
-            for (r in t) col.addView(FootUi.row(c, listOf(Cell("${r.pos}", 0.4f, color = Skin.DIM), Cell(r.team, 2.3f, bold = true),
+            for (r in t) col.addView(FootUi.row(c, listOf(Cell("${r.pos}", 0.4f, color = Skin.DIM), Cell(r.team, 2.3f, bold = true, crest = listOf(r.team)),
                 Cell("${r.P}", 0.5f, FootUi.RIGHT), Cell("${r.W}", 0.5f, FootUi.RIGHT), Cell("${r.D}", 0.5f, FootUi.RIGHT), Cell("${r.L}", 0.5f, FootUi.RIGHT),
                 Cell("${r.GF}", 0.55f, FootUi.RIGHT), Cell("${r.GA}", 0.55f, FootUi.RIGHT), Cell(FootUi.sign(r.GD.toDouble(), 0), 0.6f, FootUi.RIGHT),
                 Cell("${r.Pts}", 0.6f, FootUi.RIGHT, Skin.CYAN, true), Cell("%.1f".format(r.xGF), 0.75f, FootUi.RIGHT, Skin.MUTED),
@@ -179,7 +179,12 @@ class FootPages(private val h: FootHost) {
         val mv = h.eng.matchView(lk, fx)
         val p = mv.pred
         val (sv, col) = FootUi.page(c)
-        col.addView(FootUi.h1(c, "${fx.home} v ${fx.away}"))
+        val titleRow = android.widget.LinearLayout(c).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val big = Skin.dp(c, 46)
+        titleRow.addView(Crest.badge(c, fx.home, 46), android.widget.LinearLayout.LayoutParams(big, big).apply { rightMargin = Skin.dp(c, 12) })
+        titleRow.addView(FootUi.h1(c, "${fx.home} v ${fx.away}"))
+        titleRow.addView(Crest.badge(c, fx.away, 46), android.widget.LinearLayout.LayoutParams(big, big).apply { leftMargin = Skin.dp(c, 12) })
+        col.addView(titleRow)
         col.addView(FootUi.note(c, "${leagueName(lk)}  -  ${Skin.dayTime(ko(fx))}  -  ${mv.lineupStatus}", Skin.CYAN))
         if (TvFinder.isUkBlackout(ko(fx))) col.addView(FootUi.note(c, "Saturday 3pm: UK channels are not allowed to show this one.", Skin.AMBER))
 
@@ -253,7 +258,7 @@ class FootPages(private val h: FootHost) {
                 val role = if (r.role == "Starter" && r.plays >= 0.999) "Starter" else "${r.role} (${FootUi.pct(r.plays)})"
                 val watched = h.picks.inWatch(r.id)
                 val nameColor = if (r.flag == "SUSPENDED") Skin.RED else if (r.flag.isNotEmpty()) Skin.AMBER else Skin.TEXT
-                col.addView(FootUi.row(c, listOf(Cell((if (watched) "★ " else "") + r.name + (if (r.flag.isNotEmpty()) "  [${r.flag}]" else ""), 2.5f, color = nameColor, bold = true),
+                col.addView(FootUi.row(c, listOf(Cell((if (watched) "★ " else "") + r.name + (if (r.flag.isNotEmpty()) "  [${r.flag}]" else ""), 2.5f, color = nameColor, bold = true, faceId = r.id, faceName = r.name),
                     Cell(role, 1.35f, color = Skin.MUTED), Cell("${r.ycSeason}", 0.5f, FootUi.RIGHT, if (r.flag.isNotEmpty()) Skin.AMBER else Skin.DIM),
                     Cell(FootUi.pct(r.booked), 0.85f, FootUi.RIGHT, if (r.booked >= 0.2) Skin.AMBER else Skin.TEXT, true),
                     Cell(FootUi.pct(r.fouls[0]), 0.85f, FootUi.RIGHT), Cell(FootUi.pct(r.fouls[1]), 0.55f, FootUi.RIGHT, Skin.MUTED),

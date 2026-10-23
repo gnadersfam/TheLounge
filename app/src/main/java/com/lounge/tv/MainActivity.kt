@@ -52,6 +52,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         Crash.install(this)
         Skin.load(this)
+        TeamLogos.ensure(this)
         window.setBackgroundDrawable(ColorDrawable(Skin.BG))
         val root = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         rail = buildRail()

@@ -52,12 +52,15 @@ class MusicScreen(act: MainActivity) : Screen(act) {
 
     // ------------------------------------------------------------------ page life
     override fun onShow() {
+        // keep the TV awake while this page is open, so the screensaver does not black the screen and stop the music
+        act.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         build()
         handler.removeCallbacks(poll)
         handler.postDelayed(poll, 500)
     }
 
     override fun onHide() {
+        act.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         stopServer()
         handler.removeCallbacks(poll)
     }
@@ -348,8 +351,14 @@ class MusicScreen(act: MainActivity) : Screen(act) {
             popup.hide()
             return true
         }
+        if (inTracks) {
+            loadPlaylists()
+            return true
+        }
         return false
     }
+
+    private var inTracks = false
 
     private fun loadTab() {
         when (tab) {
@@ -360,6 +369,7 @@ class MusicScreen(act: MainActivity) : Screen(act) {
     }
 
     private fun loadPlaylists() {
+        inTracks = false
         listCol.removeAllViews()
         listCol.addView(Skin.text(act, "Loading your playlists...", 15f, Skin.MUTED))
         Bg.run {
@@ -369,10 +379,52 @@ class MusicScreen(act: MainActivity) : Screen(act) {
                     if (tab != "playlists") return@ui
                     listCol.removeAllViews()
                     if (list.isEmpty()) listCol.addView(Skin.text(act, "No playlists found on this Spotify account.", 15f, Skin.MUTED))
-                    for (p in list) listCol.addView(Skin.choice(act, p.name, p.owner) { withDevice { d -> api.playContext(p.uri, d) } }, Skin.gapParams(act, bottomDp = 6))
+                    listCol.addView(Skin.choice(act, "Liked Songs", "Your saved songs") { openTracks("Liked Songs", "", "") }, Skin.gapParams(act, bottomDp = 6))
+                    for (p in list) listCol.addView(Skin.choice(act, p.name, p.owner) { openTracks(p.name, p.id, p.uri) }, Skin.gapParams(act, bottomDp = 6))
+                    listCol.getChildAt(0)?.requestFocus()
                 }
             } catch (e: Exception) {
                 Bg.ui { explain(e) }
+            }
+        }
+    }
+
+    /** Inside a playlist: Play all at the top, then the songs; OK on a song plays it and the playlist carries on. */
+    private fun openTracks(name: String, id: String, uri: String) {
+        inTracks = true
+        listCol.removeAllViews()
+        listCol.addView(Skin.text(act, "Loading $name...", 15f, Skin.MUTED))
+        Bg.run {
+            try {
+                val list = if (id.isEmpty()) api.likedTracks() else api.playlistTracks(id)
+                Bg.ui {
+                    if (tab != "playlists" || !inTracks) return@ui
+                    listCol.removeAllViews()
+                    listCol.addView(Skin.text(act, name, 20f, Skin.CYAN, true).apply { setPadding(0, 0, 0, Skin.dp(act, 6)) })
+                    val top = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+                    top.addView(Skin.button(act, "Back to playlists") { loadPlaylists(); listCol.getChildAt(0)?.requestFocus() }, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = Skin.dp(act, 8) })
+                    top.addView(Skin.button(act, "Play all") {
+                        if (id.isEmpty()) withDevice { d -> api.playUris(list.map { it.uri }, d) } else withDevice { d -> api.playContext(uri, d) }
+                    })
+                    listCol.addView(top, Skin.gapParams(act, bottomDp = 8))
+                    if (list.isEmpty()) listCol.addView(Skin.text(act, "No songs to show here.", 15f, Skin.MUTED))
+                    for ((i, t) in list.withIndex()) listCol.addView(Skin.choice(act, t.name, t.artists + "  -  " + t.album) {
+                        if (id.isEmpty()) withDevice { d -> api.playUris(list.drop(i).map { it.uri }, d) }
+                        else withDevice { d -> api.playTrackInContext(uri, t.uri, d) }
+                    }, Skin.gapParams(act, bottomDp = 6))
+                    (top.getChildAt(1) ?: top).requestFocus()
+                }
+            } catch (e: Exception) {
+                Bg.ui {
+                    inTracks = false
+                    listCol.removeAllViews()
+                    val se = e as? SpotifyError
+                    if (se != null && (se.code == 403 || se.code == 401))
+                        listCol.addView(Skin.text(act, "Spotify does not let this app list the songs in \"$name\" (it can happen with playlists made by other people, or if you connected before this update - Settings > Disconnect Spotify, then connect again). You can still play the whole playlist.", 15f, Skin.AMBER))
+                    else explain(e)
+                    listCol.addView(Skin.button(act, "Play playlist") { if (uri.isNotEmpty()) withDevice { d -> api.playContext(uri, d) } }, Skin.gapParams(act, -2, -2, 8))
+                    listCol.addView(Skin.button(act, "Back to playlists") { loadPlaylists() })
+                }
             }
         }
     }

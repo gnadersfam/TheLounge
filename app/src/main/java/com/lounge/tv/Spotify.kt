@@ -45,7 +45,7 @@ class SpotifyApi(private val t: SpTokens, private val http: SpHttp = NetHttp, pr
 
     companion object {
         const val REDIRECT = "https://gnadersfam.github.io/TheLounge/spotify.html"
-        const val SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative"
+        const val SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read"
         const val API = "https://api.spotify.com/v1"
         const val ACCOUNTS = "https://accounts.spotify.com"
         const val APP_PACKAGE = "com.spotify.tv.android"
@@ -124,6 +124,13 @@ class SpotifyApi(private val t: SpTokens, private val http: SpHttp = NetHttp, pr
             if (p.isEmpty()) null else SpPlaylist(p["id"].str(), p["name"].str(), p["uri"].str(), image(p["images"].arr()), p["owner"].obj()["display_name"].str())
         }
 
+        /** Songs in a playlist or in Liked Songs. Spotify calls each entry's song "item" (new) or "track" (older). */
+        fun parseEntries(o: Any?): List<SpTrack> = o.obj()["items"].arr().mapNotNull {
+            val e = it.obj()
+            val t = if (e["item"].obj().isNotEmpty()) e["item"] else e["track"]
+            parseTrack(t)
+        }
+
         fun parseSearch(o: Any?): List<SpTrack> = o.obj()["tracks"].obj()["items"].arr().mapNotNull { parseTrack(it) }
 
         fun parseQueue(o: Any?): List<SpTrack> = o.obj()["queue"].arr().mapNotNull { parseTrack(it) }
@@ -182,6 +189,30 @@ class SpotifyApi(private val t: SpTokens, private val http: SpHttp = NetHttp, pr
     fun state(): SpState? = parseState(call("GET", "/me/player"))
     fun devices(): List<SpDevice> = parseDevices(call("GET", "/me/player/devices"))
     fun playlists(): List<SpPlaylist> = parsePlaylists(call("GET", "/me/playlists" + q("limit" to "50")))
+    /** The songs inside a playlist (first 100). Tries the newer address, then the older one. */
+    fun playlistTracks(id: String): List<SpTrack> {
+        val l = q("limit" to "100")
+        return try {
+            parseEntries(call("GET", "/playlists/$id/items$l"))
+        } catch (e: SpotifyError) {
+            if (e.code != 404 && e.code != 400) throw e
+            parseEntries(call("GET", "/playlists/$id/tracks$l"))
+        }
+    }
+
+    fun likedTracks(): List<SpTrack> = parseEntries(call("GET", "/me/tracks" + q("limit" to "50")))
+
+    /** Play a song inside its playlist, so the rest of the playlist carries on after it. */
+    fun playTrackInContext(contextUri: String, trackUri: String, deviceId: String = "") {
+        call("PUT", "/me/player/play" + (if (deviceId.isEmpty()) "" else q("device_id" to deviceId)),
+            mapOf("context_uri" to contextUri, "offset" to mapOf("uri" to trackUri)))
+    }
+
+    /** Play a list of songs starting from the first one. */
+    fun playUris(uris: List<String>, deviceId: String = "") {
+        call("PUT", "/me/player/play" + (if (deviceId.isEmpty()) "" else q("device_id" to deviceId)), mapOf("uris" to uris.take(50)))
+    }
+
     fun search(text: String): List<SpTrack> = parseSearch(call("GET", "/search" + q("q" to text, "type" to "track", "limit" to "10")))
     fun queue(): List<SpTrack> = parseQueue(call("GET", "/me/player/queue"))
 

@@ -18,7 +18,13 @@ class AndroidPersist(private val c: Context) : Persist {
 }
 
 /** One column of text in a table row. [w] is its share of the row width. */
-class Cell(val text: String, val w: Float, val align: Int = Gravity.START, val color: Int = Skin.TEXT, val bold: Boolean = false)
+class Cell(
+    val text: String, val w: Float, val align: Int = Gravity.START, val color: Int = Skin.TEXT, val bold: Boolean = false,
+    /** club names whose badges are drawn before the text */
+    val crest: List<String> = emptyList(),
+    /** a player's id and name: his face is drawn before the text */
+    val faceId: String = "", val faceName: String = ""
+)
 
 /** Small building blocks for the football pages: headings, notes and table rows that the remote can scroll through. */
 object FootUi {
@@ -57,7 +63,14 @@ object FootUi {
             val t = Skin.text(c, cell.text, if (header) size - 1.5f else size, if (header) Skin.DIM else cell.color, cell.bold && !header)
             t.gravity = cell.align or Gravity.CENTER_VERTICAL
             Skin.oneLine(t)
-            r.addView(t, LinearLayout.LayoutParams(0, -2, cell.w))
+            if (!header && (cell.crest.isNotEmpty() || cell.faceId.isNotEmpty())) {
+                val g = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                val px = Skin.dp(c, 24)
+                for (team in cell.crest) g.addView(Crest.badge(c, team, 24), LinearLayout.LayoutParams(px, px).apply { rightMargin = Skin.dp(c, 5) })
+                if (cell.faceId.isNotEmpty()) g.addView(Crest.face(c, cell.faceName, cell.faceId, 28), LinearLayout.LayoutParams(Skin.dp(c, 28), Skin.dp(c, 28)).apply { rightMargin = Skin.dp(c, 8) })
+                g.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
+                r.addView(g, LinearLayout.LayoutParams(0, -2, cell.w))
+            } else r.addView(t, LinearLayout.LayoutParams(0, -2, cell.w))
         }
         return r
     }
