@@ -44,6 +44,8 @@ class PlayerActivity : Activity() {
     private lateinit var menu: LinearLayout
     private lateinit var toast: TextView
     private lateinit var matchBox: TextView
+    private lateinit var rootView: FrameLayout
+    private var tw: TwitchWindow? = null
 
     private var player: ExoPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -155,6 +157,7 @@ class PlayerActivity : Activity() {
         }
         root.addView(menu, FrameLayout.LayoutParams(Skin.dp(this, 420), -2, Gravity.CENTER))
         setContentView(root)
+        rootView = root
         live = Session.live
         ext = Store.ext(this)
     }
@@ -210,6 +213,8 @@ class PlayerActivity : Activity() {
     override fun onStop() {
         super.onStop()
         if (Remote.player === this) Remote.player = null
+        tw?.close()
+        tw = null
         saveProgress()
         handler.removeCallbacksAndMessages(null)
         player?.release()
@@ -507,10 +512,70 @@ class PlayerActivity : Activity() {
         val items = ArrayList<Pair<String, () -> Unit>>()
         items.add(Pair("Audio") { trackMenu(C.TRACK_TYPE_AUDIO, "Audio") })
         items.add(Pair("Subtitles") { trackMenu(C.TRACK_TYPE_TEXT, "Subtitles") })
+        items.add(Pair("Twitch window") { twitchMenu() })
         if (live) items.add(Pair("Restart this channel") { closeMenu(); startChannel(true) })
         else items.add(Pair("Start over") { closeMenu(); player?.seekTo(0); lastPos = 0; showVodInfo() })
         items.add(Pair("Close") { closeMenu() })
         openMenu(if (live) "Live TV" else Session.vodTitle, items)
+    }
+
+    // ------------------------------------------------------------------ small Twitch window beside the picture
+    private fun twitchMenu() {
+        if (!Twitch.loggedIn(this)) {
+            openMenu("Twitch window", listOf(
+                Pair("Log in on the Twitch page first") { closeMenu() },
+                Pair("Back") { mainMenu() }
+            ))
+            return
+        }
+        val w = tw
+        if (w != null && w.active) {
+            val items = ArrayList<Pair<String, () -> Unit>>()
+            for ((i, s) in TwitchWindow.SIZES.withIndex()) {
+                val mark = if (i == w.sizeIdx) "   (on)" else ""
+                items.add(Pair("Size: " + s.label + mark) { w.setSize(i); closeMenu() })
+            }
+            items.add(Pair(if (w.hearTwitch) "Hear the film again" else "Hear Twitch instead") { w.swapSound(); closeMenu() })
+            items.add(Pair("Change channel") { pickTwitch() })
+            items.add(Pair("Hide Twitch window") { w.close(); tw = null; closeMenu() })
+            items.add(Pair("Back") { mainMenu() })
+            openMenu("Twitch window", items)
+        } else {
+            pickTwitch()
+        }
+    }
+
+    private fun pickTwitch() {
+        openMenu("Twitch window", listOf(Pair("Loading channels...") { }))
+        Bg.run {
+            val list: List<Twitch.Stream> = try {
+                val f = Twitch.followed(this)
+                if (f.isNotEmpty()) f else Twitch.top(this)
+            } catch (e: Throwable) {
+                emptyList()
+            }
+            Bg.ui {
+                if (menuVisible()) {
+                    val items = ArrayList<Pair<String, () -> Unit>>()
+                    for (s in list.take(8)) {
+                        val game = if (s.game.isNotEmpty()) "  -  " + s.game else ""
+                        items.add(Pair(s.name + game) { openTwitchWindow(s); closeMenu() })
+                    }
+                    if (list.isEmpty()) items.add(Pair("No channels came back") { closeMenu() })
+                    items.add(Pair("Back") { mainMenu() })
+                    openMenu("Twitch window", items)
+                }
+            }
+        }
+    }
+
+    private fun openTwitchWindow(s: Twitch.Stream) {
+        var w = tw
+        if (w == null) {
+            w = TwitchWindow(this, rootView) { v -> player?.volume = v }
+            tw = w
+        }
+        w.open(s.login, s.name)
     }
 
     private fun trackLabel(lang: String?, label: String?, channels: Int, n: Int): String {

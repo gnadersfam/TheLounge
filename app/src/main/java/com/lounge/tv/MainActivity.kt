@@ -27,6 +27,7 @@ class MainActivity : Activity() {
         RailItem("movies", R.drawable.ic_movies, "Movies"),
         RailItem("shows", R.drawable.ic_shows, "Shows"),
         RailItem("football", R.drawable.ic_football, "Football", "PLAY"),
+        RailItem("twitch", R.drawable.ic_twitch, "Twitch"),
         RailItem("music", R.drawable.ic_music, "Music"),
         RailItem("settings", R.drawable.ic_settings, "Settings", "SYSTEM")
     )
@@ -161,6 +162,7 @@ class MainActivity : Activity() {
         "movies" -> VodScreen(this, false)
         "shows" -> VodScreen(this, true)
         "football" -> FootballScreen(this)
+        "twitch" -> TwitchScreen(this)
         "music" -> MusicScreen(this)
         "settings" -> SettingsScreen(this)
         else -> PairScreen(this)

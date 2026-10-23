@@ -223,6 +223,11 @@ class PairServer(private val ctx: Context) {
             Store.putStr(ctx, "spotify_client_id", sp)
             saved.add("Spotify app ID")
         }
+        val tw = b["twitch_client_id"].orEmpty().trim()
+        if (tw.isNotEmpty()) {
+            Store.putStr(ctx, "twitch_client_id", tw)
+            saved.add("Twitch Client ID")
+        }
         return saved
     }
 
@@ -263,6 +268,8 @@ class PairServer(private val ctx: Context) {
             "<label>API-Football key${had("a", Store.apiFootballKey(ctx).isNotBlank())}</label><input name=apifootball_key autocapitalize=none autocorrect=off>" +
             "<h2>Spotify</h2>" +
             "<label>Spotify app Client ID${had("c", Store.spotifyClientId(ctx).isNotBlank())}</label><input name=spotify_client_id autocapitalize=none autocorrect=off>" +
+            "<h2>Twitch</h2>" +
+            "<label>Twitch Client ID${had("t", Twitch.clientId(ctx).isNotBlank())}</label><input name=twitch_client_id autocapitalize=none autocorrect=off>" +
             "<p>Leave a box empty to keep what is already saved.</p>" +
             "<p><a style='color:#19F0FF' href='/backup?k=$pin'>Back up or restore my settings</a></p>" +
             "<button type=submit>Save on the Firestick</button></form>"
