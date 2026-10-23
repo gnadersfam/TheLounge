@@ -14,13 +14,15 @@ object Bg {
             try {
                 work()
             } catch (e: Throwable) {
-                // each caller reports its own problems; this just keeps one failure from stopping the pool
+                Crash.log("Background", e)
             }
         }
     }
 
     fun ui(work: () -> Unit) {
-        main.post(work)
+        main.post {
+            try { work() } catch (e: Throwable) { Crash.log("Screen update", e) }
+        }
     }
 
     fun uiDelayed(ms: Long, work: Runnable) {

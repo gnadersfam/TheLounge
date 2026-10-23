@@ -43,7 +43,22 @@ class SettingsScreen(act: MainActivity) : Screen(act) {
 
     private fun build() {
         col.removeAllViews()
-        col.addView(Skin.text(act, "Settings", 30f, Skin.TEXT, true))
+        col.addView(Skin.text(act, "SETTINGS", 40f, Skin.TEXT, true).apply { letterSpacing = 0.03f })
+
+        col.addView(h2("Skin"))
+        val skinRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+        for ((id, label) in Skin.SKINS) {
+            val b = Skin.choice(act, label, if (id == Skin.current) "In use" else "") {
+                if (id != Skin.current) {
+                    Store.putStr(act, "skin", id)
+                    Skin.apply(id)
+                    act.recreate()
+                }
+            }
+            b.isSelected = id == Skin.current
+            skinRow.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = Skin.dp(act, 10) })
+        }
+        col.addView(skinRow, Skin.gapParams(act, bottomDp = 6))
 
         col.addView(h2("Keys and logins"))
         item("Pair with phone", "Type your IPTV login, football keys and Spotify ID on your phone") { act.open("pair") }
@@ -104,6 +119,15 @@ class SettingsScreen(act: MainActivity) : Screen(act) {
             act.open("pair")
         }
         col.addView(note("On the phone page press \"Back up or restore my settings\". Logins and keys are never included."))
+
+        col.addView(h2("Help"))
+        val errs = Crash.count()
+        col.addView(note(if (errs == 0) "No problems recorded." else "$errs small problem${if (errs == 1) "" else "s"} recorded and skipped (the app kept going).",
+            if (errs == 0) Skin.GREEN else Skin.AMBER))
+        if (errs > 0) {
+            col.addView(Skin.text(act, Crash.recent(900), 11f, Skin.DIM).apply { setPadding(Skin.dp(act, 4), 0, 0, Skin.dp(act, 6)) })
+            item("Clear the problem list") { Crash.clear(); build() }
+        }
 
         if (updateNote.isNotEmpty()) col.addView(Skin.text(act, updateNote, 16f, Skin.GREEN).apply { setPadding(Skin.dp(act, 4), Skin.dp(act, 14), 0, 0) })
         post { focusFirst() }

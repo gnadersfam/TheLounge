@@ -26,7 +26,7 @@ object Img {
             return
         }
         view.setImageDrawable(null)
-        if (url in failed) return
+        if (synchronized(failed) { url in failed }) return
         pool.execute {
             val bmp = try {
                 fetch(url, maxW, maxH)

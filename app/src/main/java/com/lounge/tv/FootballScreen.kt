@@ -19,7 +19,7 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
     override val state: FootState = FootState(io)
     override val picks: Picks = Picks(io)
     private var engine: Engine? = null
-    override val eng: Engine get() = engine!!
+    override val eng: Engine get() = engine ?: throw IllegalStateException("football numbers not ready")
     private val pages = FootPages(this)
 
     private class Nav(val key: String, val label: String)
@@ -110,6 +110,7 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
                 state.load()
                 engine = newEngine()
             } catch (e: Throwable) {
+                Crash.log("Football reload", e)
             }
             Bg.ui(done)
         }
@@ -181,6 +182,7 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
                 state.load()
                 engine = newEngine()
             } catch (e: Throwable) {
+                Crash.log("Football load", e)
                 engine = null
             }
             Bg.ui {
@@ -211,6 +213,7 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
 
     private fun pick(key: String) {
         if (key == "refresh") { startRefresh(); return }
+        if (refreshing) { flash("Refreshing football data - one moment"); return }
         section = key
         stack.clear()
         markNav()
@@ -250,11 +253,13 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
     }
 
     private fun showTop() {
-        if (!loaded) return
+        // while the numbers are being refreshed the data is changing underneath, so no page is built from it
+        if (!loaded || refreshing) return
         popupObj.hide()
         val v = try {
             if (stack.isEmpty()) sectionView() else stack.last()()
         } catch (e: Throwable) {
+            Crash.log("Football page", e)
             val (sv, col) = FootUi.page(act)
             col.addView(FootUi.note(act, "Something went wrong showing this page (${e.javaClass.simpleName}: ${e.message}). Press Back and try Refresh now.", Skin.RED))
             sv
@@ -366,6 +371,7 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
                     warnings = warnings + "Scorecards: ${e.message}"
                 }
             } catch (e: Throwable) {
+                Crash.log("Football refresh", e)
                 failure = e.message ?: e.javaClass.simpleName
             }
             Bg.ui {

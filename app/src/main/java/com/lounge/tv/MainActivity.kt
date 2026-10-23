@@ -11,73 +11,141 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextView
 
 /**
- * The shell: a thin icon rail down the left and one page at a time on the right.
+ * The shell: a labelled menu down the left, a clock top-right, and one page at a time in the middle.
  * Pages are made the first time they are opened and then kept, so coming back is instant.
  */
 class MainActivity : Activity() {
 
-    private class RailItem(val name: String, val icon: Int, val label: String)
+    private class RailItem(val name: String, val icon: Int, val label: String, val group: String = "")
 
     private val items = listOf(
-        RailItem("home", R.drawable.ic_home, "Home"),
+        RailItem("home", R.drawable.ic_home, "Home", "WATCH"),
         RailItem("live", R.drawable.ic_tv, "Live TV"),
         RailItem("movies", R.drawable.ic_movies, "Movies"),
         RailItem("shows", R.drawable.ic_shows, "Shows"),
-        RailItem("football", R.drawable.ic_football, "Football"),
+        RailItem("football", R.drawable.ic_football, "Football", "PLAY"),
         RailItem("music", R.drawable.ic_music, "Music"),
-        RailItem("settings", R.drawable.ic_settings, "Settings")
+        RailItem("settings", R.drawable.ic_settings, "Settings", "SYSTEM")
     )
 
     private lateinit var content: FrameLayout
     private lateinit var rail: LinearLayout
-    private val railViews = HashMap<String, FrameLayout>()
+    private lateinit var clockTime: TextView
+    private lateinit var clockDate: TextView
+    private lateinit var iptvNote: TextView
+    private val railViews = HashMap<String, LinearLayout>()
     private val screens = HashMap<String, Screen>()
     var currentName: String = ""
         private set
 
+    private val clockTick = object : Runnable {
+        override fun run() {
+            updateClock()
+            Bg.uiDelayed(15_000, this)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Crash.install(this)
+        Skin.load(this)
         window.setBackgroundDrawable(ColorDrawable(Skin.BG))
         val root = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         rail = buildRail()
-        root.addView(rail, LinearLayout.LayoutParams(Skin.dp(this, 64), -1))
+        root.addView(rail, LinearLayout.LayoutParams(Skin.dp(this, 250), -1))
+        val wrap = FrameLayout(this)
         content = FrameLayout(this)
-        root.addView(content, LinearLayout.LayoutParams(0, -1, 1f))
+        wrap.addView(content, FrameLayout.LayoutParams(-1, -1))
+        // the clock sits on top of every page, top right
+        val clock = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+            isFocusable = false
+        }
+        clockTime = Skin.text(this, "", 34f, Skin.TEXT, true).apply { gravity = Gravity.END }
+        clockDate = Skin.text(this, "", 13f, Skin.DIM).apply { gravity = Gravity.END }
+        clock.addView(clockTime)
+        clock.addView(clockDate)
+        wrap.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
+            topMargin = Skin.dp(this@MainActivity, 18); rightMargin = Skin.dp(this@MainActivity, 36)
+        })
+        root.addView(wrap, LinearLayout.LayoutParams(0, -1, 1f))
         setContentView(root)
+        updateClock()
 
         Updates.checkInBackground(this)
         open(if (Store.hasLogin(this)) "home" else "pair")
     }
 
+    private fun updateClock() {
+        val now = System.currentTimeMillis() / 1000
+        clockTime.text = Skin.hhmm(now)
+        clockDate.text = Skin.dayDate(now)
+        val exp = Store.str(this, "acct_exp").toLongOrNull()
+        if (exp != null && exp > 0) {
+            val days = (exp - now) / 86400
+            val ends = java.text.SimpleDateFormat("d MMM", java.util.Locale.UK).format(java.util.Date(exp * 1000))
+            iptvNote.text = if (days >= 0) "IPTV ends $ends  -  $days days left" else "IPTV has ended"
+        } else iptvNote.text = ""
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Bg.cancel(clockTick)
+        Bg.uiDelayed(15_000, clockTick)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Bg.cancel(clockTick)
+    }
+
     private fun buildRail(): LinearLayout {
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
             setBackgroundColor(Skin.RAIL)
-            setPadding(0, Skin.dp(this@MainActivity, 24), 0, Skin.dp(this@MainActivity, 24))
+            setPadding(0, Skin.dp(this@MainActivity, 22), 0, 0)
         }
-        val logo = ImageView(this).apply { setImageResource(R.drawable.logo) }
-        col.addView(logo, LinearLayout.LayoutParams(Skin.dp(this, 40), Skin.dp(this, 40)).apply { bottomMargin = Skin.dp(this@MainActivity, 18) })
+        val logoRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(Skin.dp(this@MainActivity, 22), 0, 0, Skin.dp(this@MainActivity, 8))
+        }
+        logoRow.addView(ImageView(this).apply { setImageResource(R.drawable.logo) }, LinearLayout.LayoutParams(Skin.dp(this, 44), Skin.dp(this, 44)))
+        logoRow.addView(Skin.text(this, "THE LOUNGE", 26f, Skin.TEXT, true).apply { setPadding(Skin.dp(this@MainActivity, 12), 0, 0, 0) })
+        col.addView(logoRow)
         for (it in items) {
-            val cell = FrameLayout(this).apply {
-                background = Skin.card(this@MainActivity, 14, Color.TRANSPARENT, Color.TRANSPARENT)
+            if (it.group.isNotEmpty()) {
+                col.addView(Skin.text(this, it.group, 12f, Skin.DIM, true).apply {
+                    letterSpacing = 0.18f
+                    setPadding(Skin.dp(this@MainActivity, 24), Skin.dp(this@MainActivity, 14), 0, Skin.dp(this@MainActivity, 4))
+                })
+            }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = Skin.card(this@MainActivity, 12, Color.TRANSPARENT, Color.TRANSPARENT)
                 isFocusable = true
                 isClickable = true
                 contentDescription = it.label
+                setPadding(Skin.dp(this@MainActivity, 16), 0, Skin.dp(this@MainActivity, 12), 0)
                 setOnClickListener { _ -> open(it.name) }
             }
-            val img = ImageView(this).apply {
-                setImageResource(it.icon)
-                setColorFilter(Skin.MUTED)
-            }
-            cell.addView(img, Skin.center(img, Skin.dp(this, 26), Skin.dp(this, 26)))
-            railViews[it.name] = cell
-            val lp = LinearLayout.LayoutParams(Skin.dp(this, 48), Skin.dp(this, 44)).apply { bottomMargin = Skin.dp(this@MainActivity, 14) }
-            if (it.name == "settings") lp.topMargin = Skin.dp(this, 14)
-            col.addView(cell, lp)
+            row.addView(ImageView(this).apply { setImageResource(it.icon); setColorFilter(Skin.MUTED) },
+                LinearLayout.LayoutParams(Skin.dp(this, 26), Skin.dp(this, 26)))
+            row.addView(Skin.text(this, it.label, 20f, Skin.MUTED, true).apply { setPadding(Skin.dp(this@MainActivity, 14), 0, 0, 0) },
+                LinearLayout.LayoutParams(0, -2, 1f))
+            railViews[it.name] = row
+            col.addView(row, LinearLayout.LayoutParams(-1, Skin.dp(this, 48)).apply {
+                leftMargin = Skin.dp(this@MainActivity, 10); rightMargin = Skin.dp(this@MainActivity, 10); topMargin = Skin.dp(this@MainActivity, 2)
+            })
         }
+        col.addView(View(this), LinearLayout.LayoutParams(-1, 0, 1f))
+        iptvNote = Skin.text(this, "", 13f, Skin.DIM).apply { setPadding(Skin.dp(this@MainActivity, 22), Skin.dp(this@MainActivity, 14), Skin.dp(this@MainActivity, 12), Skin.dp(this@MainActivity, 16)) }
+        col.addView(iptvNote)
         return col
     }
 
@@ -109,6 +177,7 @@ class MainActivity : Activity() {
             for ((n, v) in railViews) {
                 v.isSelected = n == name
                 (v.getChildAt(0) as ImageView).setColorFilter(if (n == name) Skin.CYAN else Skin.MUTED)
+                (v.getChildAt(1) as TextView).setTextColor(if (n == name) Skin.TEXT else Skin.MUTED)
             }
             s.onShow()
         }
@@ -182,6 +251,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Bg.cancel(clockTick)
         Updates.shutdown()
     }
 }

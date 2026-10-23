@@ -15,7 +15,7 @@ class HomeScreen(act: MainActivity) : Screen(act) {
 
     init {
         col.orientation = LinearLayout.VERTICAL
-        col.setPadding(Skin.dp(act, 40), Skin.dp(act, 28), Skin.dp(act, 34), Skin.dp(act, 30))
+        col.setPadding(Skin.dp(act, 40), Skin.dp(act, 24), Skin.dp(act, 36), Skin.dp(act, 30))
         scroll.isVerticalScrollBarEnabled = false
         scroll.addView(col, LinearLayout.LayoutParams(-1, -2))
         addView(scroll, LayoutParams(-1, -1))
@@ -56,6 +56,26 @@ class HomeScreen(act: MainActivity) : Screen(act) {
         return out.sortedBy { it.minutes }
     }
 
+    private class Next(val lk: String, val fx: Fixture, val ko: Long)
+
+    /** The next three matches that have not started yet (within two days). */
+    private fun nextMatches(): List<Next> {
+        return try {
+            val now = System.currentTimeMillis() / 1000
+            val out = ArrayList<Next>()
+            val raw = Store.loadJson(act, "f_fixtures").obj()
+            for ((lk, l) in raw) for (o in l.arr()) {
+                val fx = FootJson.fixtureFrom(o)
+                val ko = Utc.parse(fx.utc) ?: continue
+                if (ko > now && ko - now < 2 * 86400) out.add(Next(lk, fx, ko))
+            }
+            out.sortedBy { it.ko }.take(3)
+        } catch (e: Throwable) {
+            Crash.log("Home tonight", e)
+            emptyList()
+        }
+    }
+
     private fun tile(icon: Int, label: String, sub: String, open: () -> Unit): LinearLayout {
         val t = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
@@ -87,15 +107,12 @@ class HomeScreen(act: MainActivity) : Screen(act) {
 
     private fun build() {
         col.removeAllViews()
-        val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        head.addView(ImageView(act).apply { setImageResource(R.drawable.logo) }, LinearLayout.LayoutParams(Skin.dp(act, 54), Skin.dp(act, 54)))
-        head.addView(Skin.text(act, "The Lounge", 34f, Skin.TEXT, true).apply { setPadding(Skin.dp(act, 16), 0, 0, 0) })
-        col.addView(head, Skin.gapParams(act, bottomDp = 16))
+        col.addView(Skin.text(act, "HOME", 40f, Skin.TEXT, true).apply { letterSpacing = 0.03f }, Skin.gapParams(act, bottomDp = 12))
 
         if (Updates.available(act)) {
             col.addView(banner("A newer version of The Lounge is ready.", Skin.MAGENTA, "Open Settings") { act.open("settings") }, Skin.gapParams(act, bottomDp = 12))
         }
-        val soon = soonMatches()
+        val soon = try { soonMatches() } catch (e: Throwable) { Crash.log("Home banner", e); emptyList() }
         if (soon.isNotEmpty()) {
             val first = soon.first()
             val when_ = if (first.minutes > 0) "kicks off in ${first.minutes} min" else if (first.minutes >= -1) "is kicking off now" else "started ${-first.minutes} min ago"
@@ -109,6 +126,32 @@ class HomeScreen(act: MainActivity) : Screen(act) {
             val days = (exp - System.currentTimeMillis() / 1000) / 86400
             if (days in 0..14) col.addView(banner("Your IPTV subscription ends in $days day${if (days == 1L) "" else "s"}.", Skin.AMBER, "Settings") { act.open("settings") }, Skin.gapParams(act, bottomDp = 12))
             else if (days < 0) col.addView(banner("Your IPTV subscription has ended.", Skin.RED, "Settings") { act.open("settings") }, Skin.gapParams(act, bottomDp = 12))
+        }
+
+        // tonight: the next few league matches (from the football data saved on this Fire TV)
+        val next = nextMatches()
+        if (next.isNotEmpty()) {
+            col.addView(Skin.text(act, "TONIGHT AND NEXT", 20f, Skin.CYAN, true).apply { letterSpacing = 0.1f }, Skin.gapParams(act, bottomDp = 8))
+            val line = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+            for (m in next) {
+                val chip = LinearLayout(act).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = Skin.card(act, 16)
+                    isFocusable = true
+                    isClickable = true
+                    setPadding(Skin.dp(act, 14), Skin.dp(act, 8), Skin.dp(act, 14), Skin.dp(act, 8))
+                    setOnClickListener { act.open("football", "match:${m.lk}|${m.fx.utc}|${m.fx.home}|${m.fx.away}") }
+                }
+                chip.addView(Crest.badge(act, m.fx.home, 30), LinearLayout.LayoutParams(Skin.dp(act, 30), Skin.dp(act, 30)))
+                chip.addView(Crest.badge(act, m.fx.away, 30), LinearLayout.LayoutParams(Skin.dp(act, 30), Skin.dp(act, 30)).apply { leftMargin = -Skin.dp(act, 8) })
+                val txt = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(Skin.dp(act, 10), 0, 0, 0) }
+                txt.addView(Skin.oneLine(Skin.text(act, "${m.fx.home} v ${m.fx.away}", 16f, Skin.TEXT, true)))
+                txt.addView(Skin.oneLine(Skin.text(act, Skin.dayTime(m.ko), 13f, Skin.MUTED)))
+                chip.addView(txt, LinearLayout.LayoutParams(0, -2, 1f))
+                line.addView(chip, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = Skin.dp(act, 12) })
+            }
+            col.addView(line, Skin.gapParams(act, bottomDp = 14))
         }
 
         // carry on
@@ -149,7 +192,7 @@ class HomeScreen(act: MainActivity) : Screen(act) {
             val line = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
             for ((t, go) in r) {
                 line.addView(tile(t.first, t.second, if (!live && t.second in listOf("Live TV", "Movies", "Shows")) "Pair with phone first" else t.third) { go() },
-                    LinearLayout.LayoutParams(0, Skin.dp(act, 130), 1f).apply { rightMargin = Skin.dp(act, 12) })
+                    LinearLayout.LayoutParams(0, Skin.dp(act, 112), 1f).apply { rightMargin = Skin.dp(act, 12) })
             }
             col.addView(line, Skin.gapParams(act, bottomDp = 12))
         }

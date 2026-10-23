@@ -20,22 +20,58 @@ import java.util.Locale
 
 /** The "Electric" look: neon magenta and cyan on near-black, glowing outlines for whatever the remote is on. */
 object Skin {
-    const val BG = 0xFF07030F.toInt()
-    const val PANEL = 0xFF0E0820.toInt()
-    const val RAIL = 0xFF080414.toInt()
-    const val CARD = 0xFF1A1030.toInt()
-    const val CARD_DIM = 0xFF0F0A1E.toInt()
-    const val CARD_FOCUS = 0xFF2A1450.toInt()
-    const val LINE = 0xFF3A2468.toInt()
-    const val CYAN = 0xFF19F0FF.toInt()
-    const val MAGENTA = 0xFFFF3DDB.toInt()
-    const val VIOLET = 0xFF8A4DFF.toInt()
-    const val TEXT = 0xFFF5EEFF.toInt()
-    const val MUTED = 0xFFC9B8F0.toInt()
-    const val DIM = 0xFFA593D1.toInt()
-    const val AMBER = 0xFFF2B84B.toInt()
-    const val GREEN = 0xFF3DDC97.toInt()
-    const val RED = 0xFFFF5C7A.toInt()
+    // The colours are variables so the look can be switched (Electric, Carbon, Sunset). CYAN is the main accent,
+    // MAGENTA the second accent. They are set by apply() before any screen is built.
+    var BG = 0xFF07030F.toInt()
+    var PANEL = 0xFF0E0820.toInt()
+    var RAIL = 0xFF080414.toInt()
+    var CARD = 0xFF1A1030.toInt()
+    var CARD_DIM = 0xFF0F0A1E.toInt()
+    var CARD_FOCUS = 0xFF2A1450.toInt()
+    var LINE = 0xFF3A2468.toInt()
+    var CYAN = 0xFF19F0FF.toInt()
+    var MAGENTA = 0xFFFF3DDB.toInt()
+    var VIOLET = 0xFF8A4DFF.toInt()
+    var TEXT = 0xFFF5EEFF.toInt()
+    var MUTED = 0xFFC9B8F0.toInt()
+    var DIM = 0xFFA593D1.toInt()
+    var AMBER = 0xFFF2B84B.toInt()
+    var GREEN = 0xFF3DDC97.toInt()
+    var RED = 0xFFFF5C7A.toInt()
+
+    /** Names shown in Settings, in order. */
+    val SKINS = listOf("electric" to "Electric", "carbon" to "Carbon", "sunset" to "Sunset")
+    var current = "electric"
+        private set
+
+    /** Read the saved skin and apply it. Call first thing in every activity's onCreate. */
+    fun load(c: Context) {
+        apply(Store.str(c, "skin", "electric"))
+    }
+
+    fun apply(name: String) {
+        current = if (SKINS.any { it.first == name }) name else "electric"
+        when (current) {
+            "carbon" -> {
+                BG = 0xFF0A0B0D.toInt(); PANEL = 0xFF111316.toInt(); RAIL = 0xFF0E1012.toInt()
+                CARD = 0xFF181B1F.toInt(); CARD_DIM = 0xFF111316.toInt(); CARD_FOCUS = 0xFF222730.toInt()
+                LINE = 0xFF2E333A.toInt(); CYAN = 0xFF5BC8FF.toInt(); MAGENTA = 0xFFEEF1F4.toInt(); VIOLET = 0xFF8FA0B3.toInt()
+                TEXT = 0xFFEEF1F4.toInt(); MUTED = 0xFFB5BDC7.toInt(); DIM = 0xFF8D96A0.toInt()
+            }
+            "sunset" -> {
+                BG = 0xFF0D0610.toInt(); PANEL = 0xFF150A19.toInt(); RAIL = 0xFF090410.toInt()
+                CARD = 0xFF1F1024.toInt(); CARD_DIM = 0xFF150A19.toInt(); CARD_FOCUS = 0xFF33142F.toInt()
+                LINE = 0xFF4A2250.toInt(); CYAN = 0xFFFF7A45.toInt(); MAGENTA = 0xFFFF3D8B.toInt(); VIOLET = 0xFFB05CFF.toInt()
+                TEXT = 0xFFFFF0EA.toInt(); MUTED = 0xFFD2A9BC.toInt(); DIM = 0xFFAE869B.toInt()
+            }
+            else -> {
+                BG = 0xFF07030F.toInt(); PANEL = 0xFF0E0820.toInt(); RAIL = 0xFF080414.toInt()
+                CARD = 0xFF1A1030.toInt(); CARD_DIM = 0xFF0F0A1E.toInt(); CARD_FOCUS = 0xFF2A1450.toInt()
+                LINE = 0xFF3A2468.toInt(); CYAN = 0xFF19F0FF.toInt(); MAGENTA = 0xFFFF3DDB.toInt(); VIOLET = 0xFF8A4DFF.toInt()
+                TEXT = 0xFFF5EEFF.toInt(); MUTED = 0xFFC9B8F0.toInt(); DIM = 0xFFA593D1.toInt()
+            }
+        }
+    }
 
     /**
      * Sizes are written for a screen 1280 units wide and scale with the real screen width, so the layout looks
