@@ -127,7 +127,7 @@ class SettingsScreen(act: MainActivity) : Screen(act) {
         col.addView(note(if (errs == 0) "No problems recorded." else "$errs small problem${if (errs == 1) "" else "s"} recorded and skipped (the app kept going).",
             if (errs == 0) Skin.GREEN else Skin.AMBER))
         if (errs > 0) {
-            col.addView(Skin.text(act, Crash.recent(900), 11f, Skin.DIM).apply { setPadding(Skin.dp(act, 4), 0, 0, Skin.dp(act, 6)) })
+            col.addView(Skin.text(act, Crash.recent(2200), 10f, Skin.DIM).apply { setPadding(Skin.dp(act, 4), 0, 0, Skin.dp(act, 6)) })
             item("Clear the problem list") { Crash.clear(); build() }
         }
 

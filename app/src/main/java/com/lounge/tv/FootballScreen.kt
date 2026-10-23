@@ -123,23 +123,45 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
         return Engine(state, c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1)
     }
 
-    /** The match-to-channel lookup uses the TV guide the Live TV page already saved (no second download). */
+    private var finderGaveUp = false
+
+    /**
+     * The match-to-channel lookup uses the TV guide the Live TV page already saved (no second download).
+     * The saved guide is very big, so it is read and matched on a background thread, never on the screen thread
+     * (reading it on the screen thread froze the app and the Fire TV then closed it).
+     */
     private fun ensureFinder() {
         if (finderBusy || engine == null || !Store.hasLogin(act)) return
-        val epg = if (Session.epg.built > 0) Session.epg else EpgData.fromJson(Store.loadJson(act, "live_epg"))
-        if (epg.built == 0L) return
-        if (finderObj != null && finderBuiltFor == epg.built) return
+        if (finderObj != null && Session.epg.built > 0 && finderBuiltFor == Session.epg.built) return
+        if (finderGaveUp && Session.epg.built == 0L) return
         finderBusy = true
-        val chans = channels()
         val teams = HashSet<String>()
         for (lk in Leagues.ORDER) (state.results[lk] ?: emptyList()).forEach { teams.add(it.home); teams.add(it.away) }
+        val cached = chanCache
         Bg.run {
-            val f = try { TvFinder(chans, epg, TeamNames(teams)) } catch (e: Throwable) { null }
+            var epgUsed: EpgData? = null
+            var chansUsed: List<Chan>? = null
+            val f = try {
+                val epg = if (Session.epg.built > 0) Session.epg else EpgData.fromJson(Store.loadJson(act, "live_epg"))
+                if (epg.built == 0L) null
+                else {
+                    val chans = cached ?: (Store.loadChannels(act)?.second ?: emptyList())
+                    epgUsed = epg
+                    chansUsed = chans
+                    TvFinder(chans, epg, TeamNames(teams))
+                }
+            } catch (e: Throwable) {
+                Crash.log("Football channel finder", e)
+                null
+            }
             Bg.ui {
                 finderBusy = false
                 finderObj = f
-                finderBuiltFor = epg.built
-                if (f != null && section == "hub" && stack.isEmpty() && visibility == View.VISIBLE) showTop()
+                finderBuiltFor = epgUsed?.built ?: 0L
+                finderGaveUp = f == null
+                if (chanCache == null && chansUsed != null) chanCache = chansUsed
+                if (epgUsed != null && Session.epg.built == 0L) Session.epg = epgUsed!!
+                if (f != null && section == "hub" && stack.isEmpty() && visibility == View.VISIBLE && !refreshing) showTop()
             }
         }
     }
@@ -154,6 +176,7 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
         chanCache = null
         finderObj = null
         finderBuiltFor = 0L
+        finderGaveUp = false
     }
 
     override fun onArg(arg: Any?) {
