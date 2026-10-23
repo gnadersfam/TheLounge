@@ -368,7 +368,7 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
         for (p in top) {
             val iv = ImageView(c).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
             art.addView(iv, LinearLayout.LayoutParams(0, -1, 1f))
-            Img.load(iv, p.icon, 300, 440)
+            Img.load(iv, p.icon, 170, 250)
         }
         t.addView(art, FrameLayout.LayoutParams(-1, -1))
         val shade = View(c).apply {
@@ -688,7 +688,7 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
             h.badge.visibility = if (r.next || rating > 0) View.VISIBLE else View.GONE
             h.bar.pct = r.hist?.percent() ?: 0
             h.bar.visibility = if (r.hist != null) View.VISIBLE else View.GONE
-            Img.load(h.img, r.icon, 300, 440)
+            Img.load(h.img, r.icon, 230, 330)
             h.card.setOnClickListener { open(r) }
             h.card.setOnFocusChangeListener { _, focused -> if (focused) showHead(r) }
         }

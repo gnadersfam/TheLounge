@@ -10,7 +10,6 @@
 
     <application
         android:allowBackup="false"
-        android:largeHeap="true"
         android:icon="@drawable/ic_launcher"
         android:banner="@drawable/banner"
         android:label="The Lounge"

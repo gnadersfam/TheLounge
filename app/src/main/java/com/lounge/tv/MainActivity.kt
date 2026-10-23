@@ -177,12 +177,10 @@ class MainActivity : Activity() {
                 made
             }
             currentName = name
-            if (name == "football") {
-                // the film and show lists are big; they reload quickly from the saved copy when you go back to them
-                for (n in listOf("movies", "shows")) screens.remove(n)?.let { content.removeView(it) }
-                Img.clear()
-                System.gc()
-            }
+            // Film and show pages hold a lot of pictures. Leaving them lets all of that go; coming back reloads quickly.
+            for (n in listOf("movies", "shows")) if (n != name) screens.remove(n)?.let { content.removeView(it) }
+            Img.clear()
+            System.gc()
             s.visibility = View.VISIBLE
             for ((n, v) in railViews) {
                 v.isSelected = n == name

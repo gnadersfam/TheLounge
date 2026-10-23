@@ -13,6 +13,7 @@ object Img {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
     private val failed = HashSet<String>()
+    private val loads = java.util.concurrent.atomic.AtomicInteger()
 
     fun clear() {
         cache.evictAll()
@@ -38,6 +39,9 @@ object Img {
                 null
             }
             if (bmp != null) {
+                // Pictures live outside the normal app memory, and the system only tidies them up when it gets round to it.
+                // Asking now and then keeps the total from creeping up while you scroll a long list.
+                if (loads.incrementAndGet() % 40 == 0) System.gc()
                 cache.put(url, bmp)
                 Bg.ui { if (view.tag == url) view.setImageBitmap(bmp) }
             } else {
