@@ -52,6 +52,8 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
     private var defaultOrder: List<String> = emptyList()
     private var fullOrder: List<String> = emptyList()
     private var hidden = HashSet<String>()
+    private var hiddenChans = HashSet<String>()
+    private var topChans = ArrayList<String>()
     private var showHidden = false
     private var currentKey = ALL_KEY
     private var query = ""
@@ -114,6 +116,7 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
         panel.onMoved = { order -> moved(order) }
         guide.onSelect = { _, ch, prog -> selected(ch, prog) }
         guide.onPlay = { row -> play(row) }
+        guide.onLong = { row -> showChannelMenu(row) }
         showDetails(null, null)
     }
 
@@ -199,6 +202,9 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
         val cfg = Store.loadJson(act, "cat_cfg").obj()
         fullOrder = Cats.fullOrder(defaultOrder, cfg["order"].arr().map { it.str() })
         hidden = HashSet(cfg["hidden"].arr().map { it.str() })
+        val cc = Store.loadJson(act, "chan_cfg").obj()
+        hiddenChans = HashSet(cc["hidden"].arr().map { it.str() })
+        topChans = ArrayList(cc["top"].arr().map { it.str() })
         val last = Store.str(act, "last_cat", ALL_KEY)
         currentKey = if (last == ALL_KEY || byCat.containsKey(last)) last else ALL_KEY
         if (currentKey in hidden) currentKey = ALL_KEY
@@ -263,13 +269,79 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
     }
 
     // ------------------------------------------------------------------ categories
-    private fun channelsFor(key: String): List<Chan> = when {
+    private fun channelsFor(key: String): List<Chan> = tidy(key, when {
         key == ALL_KEY -> all
         key.startsWith("?q:") -> {
             val q = key.substring(3)
             all.filter { it.name.contains(q, ignoreCase = true) }
         }
         else -> byCat[key] ?: emptyList()
+    })
+
+    /** Takes out the channels you hid and puts the ones you moved to the top first (for this category). */
+    private fun tidy(key: String, list: List<Chan>): List<Chan> {
+        var l = if (hiddenChans.isEmpty()) list else list.filter { it.id !in hiddenChans }
+        if (topChans.isNotEmpty()) {
+            val prefix = "$key|"
+            val pos = HashMap<String, Int>()
+            topChans.forEachIndexed { i, e -> if (e.startsWith(prefix)) pos[e.substring(prefix.length)] = i }
+            if (pos.isNotEmpty()) {
+                val tops = l.filter { it.id in pos }.sortedBy { pos[it.id] ?: 0 }
+                l = tops + l.filter { it.id !in pos }
+            }
+        }
+        return l
+    }
+
+    private fun countIn(c: String): Int = (byCat[c] ?: emptyList()).count { it.id !in hiddenChans }
+
+    private fun saveChanConfig() {
+        Store.saveJson(act, "chan_cfg", mapOf("hidden" to hiddenChans.toList(), "top" to topChans.toList()))
+    }
+
+    /** Hold OK on a channel: move it to the top of this category, or hide it. */
+    private fun showChannelMenu(row: Int) {
+        if (overlay.visibility == View.VISIBLE) return
+        val ch = guide.rows.getOrNull(row) ?: return
+        val key = currentKey
+        val choices = ArrayList<Pair<String, () -> Unit>>()
+        if (!key.startsWith("?")) choices.add(Pair("Move to top") {
+            topChans.remove("$key|${ch.id}")
+            topChans.add("$key|${ch.id}")
+            saveChanConfig()
+            hideOverlay()
+            reapply(0)
+        })
+        choices.add(Pair("Hide channel") {
+            hiddenChans.add(ch.id)
+            saveChanConfig()
+            hideOverlay()
+            refreshPanel()
+            reapply(row)
+        })
+        choices.add(Pair("Cancel") { hideOverlay() })
+        showChoices(ch.name, choices)
+    }
+
+    private fun reapply(selectRow: Int) {
+        val rows = channelsFor(currentKey)
+        guide.rows = rows
+        if (rows.isNotEmpty()) guide.select(selectRow.coerceIn(0, rows.size - 1)) else showDetails(null, null)
+        guide.requestFocus()
+    }
+
+    private fun showHiddenChannels() {
+        val list = all.filter { it.id in hiddenChans }.take(40)
+        val choices = ArrayList<Pair<String, () -> Unit>>()
+        for (c in list) choices.add(Pair("Show again: " + c.name) {
+            hiddenChans.remove(c.id)
+            saveChanConfig()
+            hideOverlay()
+            refreshPanel()
+            reapply(guide.selRow)
+        })
+        choices.add(Pair("Close") { hideOverlay() })
+        showChoices("Hidden channels (${hiddenChans.size})", choices)
     }
 
     private fun refreshPanel() {
@@ -277,10 +349,10 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
         e.add(CategoryPanel.Entry(SEARCH_KEY, "Search channels...", 0, CategoryPanel.SEARCH))
         if (showHidden) {
             e.add(CategoryPanel.Entry(BACK_KEY, "< Back to categories", 0, CategoryPanel.BACK))
-            for (c in fullOrder) if (c in hidden) e.add(CategoryPanel.Entry(c, c, byCat[c]?.size ?: 0, CategoryPanel.CAT, true))
+            for (c in fullOrder) if (c in hidden) e.add(CategoryPanel.Entry(c, c, countIn(c), CategoryPanel.CAT, true))
         } else {
-            e.add(CategoryPanel.Entry(ALL_KEY, "All channels", all.size, CategoryPanel.ALL))
-            for (c in Cats.visible(fullOrder, hidden)) e.add(CategoryPanel.Entry(c, c, byCat[c]?.size ?: 0, CategoryPanel.CAT))
+            e.add(CategoryPanel.Entry(ALL_KEY, "All channels", all.size - hiddenChans.count { id -> all.any { it.id == id } }, CategoryPanel.ALL))
+            for (c in Cats.visible(fullOrder, hidden)) e.add(CategoryPanel.Entry(c, c, countIn(c), CategoryPanel.CAT))
             if (hidden.isNotEmpty()) e.add(CategoryPanel.Entry(HIDDEN_KEY, "Hidden (${hidden.size})", 0, CategoryPanel.HIDDEN_HEADER, true))
         }
         panel.setEntries(e, currentKey)
@@ -358,6 +430,8 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
         }
         choices.add(Pair("Reset order") {
             fullOrder = defaultOrder
+            topChans.clear()
+            saveChanConfig()
             saveConfig()
             hideOverlay()
             refreshPanel()
@@ -384,6 +458,8 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
     /** Settings uses this to put the categories back in the provider's order. */
     fun resetOrder() {
         fullOrder = defaultOrder
+        topChans.clear()
+        saveChanConfig()
         saveConfig()
         refreshPanel()
     }
@@ -539,15 +615,13 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
 
     private fun showMainMenu() {
         if (overlay.visibility == View.VISIBLE) return
-        showChoices(
-            "Live TV",
-            listOf(
-                Pair("Search channels") { hideOverlay(); showSearch() },
-                Pair("Refresh channels and guide") { hideOverlay(); refresh(true) },
-                Pair("Reset category order") { hideOverlay(); resetOrder() },
-                Pair("Close") { hideOverlay() }
-            )
-        )
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items.add(Pair("Search channels") { hideOverlay(); showSearch() })
+        items.add(Pair("Refresh channels and guide") { hideOverlay(); refresh(true) })
+        if (hiddenChans.isNotEmpty()) items.add(Pair("Hidden channels (${hiddenChans.size})") { hideOverlay(); showHiddenChannels() })
+        items.add(Pair("Reset category order") { hideOverlay(); resetOrder() })
+        items.add(Pair("Close") { hideOverlay() })
+        showChoices("Live TV", items)
     }
 
     private fun showSearch() {

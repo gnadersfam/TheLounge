@@ -36,6 +36,10 @@ class GuideView(ctx: Context) : View(ctx) {
     var onSelect: ((Int, Chan?, EpgProg?) -> Unit)? = null
     var onPlay: ((Int) -> Unit)? = null
 
+    /** Hold OK on a channel (row number). */
+    var onLong: ((Int) -> Unit)? = null
+    private var longDone = false
+
     var selRow = 0
         private set
     private var selTime = nowSec()
@@ -132,12 +136,39 @@ class GuideView(ctx: Context) : View(ctx) {
             KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> return moveRow(visibleRows())
             KeyEvent.KEYCODE_DPAD_LEFT -> return moveProg(-1)
             KeyEvent.KEYCODE_DPAD_RIGHT -> return moveProg(1)
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                 if (event != null && event.repeatCount == 0) onPlay?.invoke(selRow)
+                return true
+            }
+            // OK: a quick press plays the channel (when the key comes back up); holding it opens the channel menu
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                if (event != null && event.repeatCount == 0) {
+                    longDone = false
+                    event.startTracking()
+                }
                 return true
             }
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
+        if (rows.isNotEmpty() && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+            longDone = true
+            onLong?.invoke(selRow)
+            return true
+        }
+        return super.onKeyLongPress(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (rows.isNotEmpty() && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+            val quick = event != null && event.isTracking && !event.isCanceled && !longDone
+            longDone = false
+            if (quick) onPlay?.invoke(selRow)
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     private fun moveRow(delta: Int): Boolean {
