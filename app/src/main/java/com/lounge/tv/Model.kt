@@ -22,12 +22,19 @@ class Prior(val att: Map<String, Double>, val dfn: Map<String, Double>, val hx: 
 
 class Pred(
     var home: Double, var draw: Double, var away: Double, var btts: Double, var over25: Double,
-    val scoreH: Int, val scoreA: Int, val scoreP: Double, val lh: Double, val la: Double
+    var scoreH: Int, var scoreA: Int, var scoreP: Double, val lh: Double, val la: Double
 ) {
+    /** Likeliest score inside each result: index 0 = home win, 1 = draw, 2 = away win. */
+    var bestH = IntArray(3)
+    var bestA = IntArray(3)
+    var bestP = DoubleArray(3)
     var pModel: DoubleArray = doubleArrayOf(home, draw, away)
     var pMarket: DoubleArray? = null
     var mkt = false
 }
+
+/** Display only: favourite (0 = home, 2 = away) and the likeliest draw score, for a "tight" match. */
+class Tight(val fav: Int, val drawH: Int, val drawA: Int)
 
 class Agreement(val code: String, val label: String, val model: Int, val market: Int, val pm: DoubleArray, val mk: DoubleArray)
 
@@ -121,6 +128,8 @@ object Model {
     const val OU_SLOPE = 0.6
     const val MARKET_WEIGHT = 0.8
     const val AGREE_GAP = 0.10
+    /** The draw is within this many points of the favourite = a "tight" match (display only). */
+    const val TIGHT_GAP = 0.12
 
     fun poisPmf(k: Int, lam: Double): Double {
         var f = 1.0
@@ -164,14 +173,42 @@ object Model {
         for (r in pm) for (x in r) tot += x
         var hw = 0.0; var dr = 0.0; var aw = 0.0; var btts = 0.0; var o25 = 0.0
         var bi = 0; var bj = 0; var bp = -1.0
+        val bestH = IntArray(3); val bestA = IntArray(3); val bestP = DoubleArray(3) { -1.0 }
         for (i in 0 until MAXG) for (j in 0 until MAXG) {
             val p = pm[i][j] / tot
-            if (i > j) hw += p else if (i == j) dr += p else aw += p
+            val k = if (i > j) 0 else if (i == j) 1 else 2
+            if (k == 0) hw += p else if (k == 1) dr += p else aw += p
+            if (p > bestP[k]) { bestP[k] = p; bestH[k] = i; bestA[k] = j }
             if (i > 0 && j > 0) btts += p
             if (i + j >= 3) o25 += p
             if (p > bp) { bp = p; bi = i; bj = j }
         }
-        return Pred(hw, dr, aw, btts, o25, bi, bj, bp, lh, la)
+        val pr = Pred(hw, dr, aw, btts, o25, bi, bj, bp, lh, la)
+        pr.bestH = bestH; pr.bestA = bestA; pr.bestP = bestP
+        return pr
+    }
+
+    /** Show the likeliest score that fits the result the model favours (home win / draw / away win), not the
+     *  likeliest single score, which is 1-1 in most matches even when a win is the likelier result. */
+    fun scoreForResult(pr: Pred) {
+        val v = doubleArrayOf(pr.home, pr.draw, pr.away)
+        var fav = 0
+        for (k in 1..2) if (v[k] > v[fav]) fav = k
+        pr.scoreH = pr.bestH[fav]; pr.scoreA = pr.bestA[fav]; pr.scoreP = pr.bestP[fav]
+    }
+
+    /** Display only. Tight when the draw chance is within TIGHT_GAP of the favourite's; changes no probability and
+     *  not the main pick or score. */
+    fun tight(pr: Pred): Tight? {
+        val fav = if (pr.away > pr.home) 2 else 0
+        val favP = if (fav == 0) pr.home else pr.away
+        return if (favP - pr.draw < TIGHT_GAP) Tight(fav, pr.bestH[1], pr.bestA[1]) else null
+    }
+
+    fun tightText(pr: Pred, home: String? = null, away: String? = null): String {
+        val t = tight(pr) ?: return ""
+        val who = if (home != null && away != null) (if (t.fav == 0) home else away) else (if (t.fav == 0) "home" else "away")
+        return "Tight: $who win or draw (a draw most likely ${t.drawH}-${t.drawA})"
     }
 
     fun xg(m: Match): DoubleArray =
@@ -294,6 +331,7 @@ object Model {
             pr.over25 = sigmoid((1.0 - MARKET_WEIGHT) * logit(pr.over25) + MARKET_WEIGHT * logit(pm))
             pr.mkt = true
         }
+        scoreForResult(pr)
         return pr
     }
 

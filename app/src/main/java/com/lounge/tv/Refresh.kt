@@ -63,7 +63,35 @@ object Refresh {
             if (s.officials.isNotEmpty() && stored != null && stored.ref.isEmpty()) { stored.ref = s.officials[0]; bits.add("referee") }
         }
         state.saveFixtures(); state.saveUpcoming()
+        if (stored != null) logOdds(state, lk, listOf(stored), System.currentTimeMillis() / 1000)
         return if (bits.isEmpty()) "nothing new" else bits.joinToString(", ")
+    }
+
+    /** Keeps a small history of each match's bookmaker odds (one entry each time they change). Nothing uses it yet:
+     *  it is saved so odds movement can be tested as a signal after some weeks. Never allowed to break a refresh. */
+    @Suppress("UNCHECKED_CAST")
+    fun logOdds(state: FootState, lk: String, fixtures: List<Fixture>, nowSec: Long) {
+        try {
+            val hist = LinkedHashMap<String, MutableList<Any?>>()
+            for ((k, v) in state.io.load("f_odds_hist").obj()) hist[k] = v.arr().toMutableList()
+            var changed = false
+            for (f in fixtures) {
+                val odds = f.odds ?: continue
+                val list = hist.getOrPut(f.key(lk)) { ArrayList<Any?>() }
+                val last = list.lastOrNull() as? Map<String, Any?>
+                val o = odds.toList()
+                val o25 = f.o25?.toList()
+                if (last == null || last["odds"] != o || last["o25"] != o25) {
+                    list.add(mapOf("t" to Utc.iso(nowSec), "odds" to o, "o25" to o25))
+                    changed = true
+                }
+            }
+            val cutoff = nowSec - 150L * 86400L
+            val old = hist.keys.filter { (Utc.parse(it.split("|").getOrNull(1)) ?: Long.MAX_VALUE) < cutoff }
+            for (k in old) { hist.remove(k); changed = true }
+            if (changed) state.io.save("f_odds_hist", hist)
+        } catch (e: Exception) {
+        }
     }
 
     fun today(): Triple<Int, Int, Int> {
@@ -131,6 +159,7 @@ object Refresh {
             if (out.isNotEmpty() || token.isNotEmpty()) state.fixtures[lk] = out
         }
         state.saveFixtures()
+        for (lk in Leagues.ORDER) logOdds(state, lk, state.fixtures[lk] ?: emptyList(), now)
 
         // 3. ESPN player lines for every played match
         @Suppress("UNCHECKED_CAST")

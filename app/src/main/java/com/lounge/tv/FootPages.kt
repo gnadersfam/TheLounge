@@ -122,6 +122,7 @@ class FootPages(private val h: FootHost) {
         sb.append(mv.fx.home).append(" v ").append(mv.fx.away).append('\n')
         sb.append("Home ${FootUi.pct(p.home)}  Draw ${FootUi.pct(p.draw)}  Away ${FootUi.pct(p.away)}\n")
         sb.append("Likeliest ${p.scoreH}-${p.scoreA}   Both score ${FootUi.pct(p.btts)}   Over 2.5 ${FootUi.pct(p.over25)}")
+        Model.tightText(p, mv.fx.home, mv.fx.away).let { if (it.isNotEmpty()) sb.append('\n').append(it) }
         if (mv.refName.isNotEmpty()) sb.append("\nReferee ${mv.refName}")
         val top = mv.players.sortedByDescending { it.booked }.take(3)
         if (top.isNotEmpty()) sb.append("\nMost likely booked: " + top.joinToString(", ") { it.name.substringAfterLast(' ') + " " + FootUi.pct(it.booked) })
@@ -187,6 +188,7 @@ class FootPages(private val h: FootHost) {
             Cell("${fx.away} win ${FootUi.pct(p.away)}", 1f, FootUi.RIGHT, bold = true)), size = 17f))
         col.addView(FootUi.row(c, listOf(Cell("Likeliest score ${p.scoreH}-${p.scoreA} (${FootUi.pct(p.scoreP)})", 1.2f), Cell("Both teams score ${FootUi.pct(p.btts)}", 1f),
             Cell("Over 2.5 goals ${FootUi.pct(p.over25)}", 1f), Cell("Expected goals %.1f - %.1f".format(p.lh, p.la), 1.2f, FootUi.RIGHT))))
+        Model.tightText(p, fx.home, fx.away).let { if (it.isNotEmpty()) col.addView(FootUi.note(c, it, Skin.AMBER)) }
         val a = mv.agree
         if (fx.odds != null) {
             col.addView(FootUi.note(c, "Bookmaker odds (home / draw / away): ${FootUi.odds(fx.odds)}" + (fx.o25?.let { "     over / under 2.5: ${FootUi.odds(it)}" } ?: "")))
