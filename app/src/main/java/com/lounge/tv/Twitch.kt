@@ -11,7 +11,7 @@ import javax.net.ssl.SSLSocketFactory
  * Your Twitch Client ID is saved on the Firestick only (typed on the phone page), never in the code.
  */
 object Twitch {
-    const val SCOPE = "user:read:follow"
+    const val SCOPE = "user:read:follows"
     private const val ID_URL = "https://id.twitch.tv/oauth2"
     private const val API = "https://api.twitch.tv/helix"
 
