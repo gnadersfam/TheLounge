@@ -9,10 +9,14 @@ import java.util.concurrent.Executors
 /** Loads poster pictures from the web into an ImageView, small and cached, so a long grid stays light. */
 object Img {
     private val pool = Executors.newFixedThreadPool(4)
-    private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
+    private val cache = object : LruCache<String, Bitmap>(14 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
     private val failed = HashSet<String>()
+
+    fun clear() {
+        cache.evictAll()
+    }
 
     fun load(view: ImageView, url: String, maxW: Int, maxH: Int) {
         view.tag = url

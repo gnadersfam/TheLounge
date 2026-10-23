@@ -37,6 +37,37 @@ object Crash {
         }
     }
 
+    // ---- "did the system close us?" notes. The app marks itself running when it comes to the front and not running when it
+    // leaves it. If it starts up and finds it was still marked running, it never got to leave: the system closed it
+    // (usually because the Fire TV ran short of memory). The note says where you were and how much memory was in use.
+    private fun prefs() = app?.getSharedPreferences("lounge_crash", Context.MODE_PRIVATE)
+
+    fun memLine(): String {
+        val rt = Runtime.getRuntime()
+        val used = (rt.totalMemory() - rt.freeMemory()) / 1048576
+        val max = rt.maxMemory() / 1048576
+        val nat = android.os.Debug.getNativeHeapAllocatedSize() / 1048576
+        return "memory ${used}MB of ${max}MB, native ${nat}MB"
+    }
+
+    fun markForeground(c: Context) {
+        app = c.applicationContext
+        val p = prefs() ?: return
+        if (p.getBoolean("running", false)) {
+            log("Closed by the system", RuntimeException("The app was shut down while you were using it. Last seen: " + p.getString("crumb", "?")))
+        }
+        p.edit().putBoolean("running", true).apply()
+    }
+
+    fun markLeft() {
+        prefs()?.edit()?.putBoolean("running", false)?.apply()
+    }
+
+    /** Remember where we are (page, football section) and how much memory is in use. */
+    fun crumb(where: String) {
+        prefs()?.edit()?.putString("crumb", where + "  " + memLine())?.apply()
+    }
+
     private fun file(): File? = app?.let { File(it.filesDir, "error.log") }
 
     @Synchronized

@@ -44,6 +44,7 @@ class MainActivity : Activity() {
     private val clockTick = object : Runnable {
         override fun run() {
             updateClock()
+            Crash.crumb("page=$currentName " + (screens[currentName]?.crumb() ?: ""))
             Bg.uiDelayed(15_000, this)
         }
     }
@@ -95,12 +96,14 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        Crash.markForeground(this)
         Bg.cancel(clockTick)
         Bg.uiDelayed(15_000, clockTick)
     }
 
     override fun onStop() {
         super.onStop()
+        Crash.markLeft()
         Bg.cancel(clockTick)
     }
 
@@ -174,6 +177,12 @@ class MainActivity : Activity() {
                 made
             }
             currentName = name
+            if (name == "football") {
+                // the film and show lists are big; they reload quickly from the saved copy when you go back to them
+                for (n in listOf("movies", "shows")) screens.remove(n)?.let { content.removeView(it) }
+                Img.clear()
+                System.gc()
+            }
             s.visibility = View.VISIBLE
             for ((n, v) in railViews) {
                 v.isSelected = n == name
@@ -248,6 +257,15 @@ class MainActivity : Activity() {
     /** Called after the phone page saved something. */
     fun onKeysChanged() {
         for (s in screens.values) s.onKeysChanged()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            Crash.log("Memory is short (level $level)", RuntimeException(Crash.memLine() + "  at " + currentName))
+            Img.clear()
+            System.gc()
+        }
     }
 
     override fun onDestroy() {

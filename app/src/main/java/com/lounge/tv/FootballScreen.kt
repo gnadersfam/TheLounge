@@ -75,6 +75,8 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
         addView(overlay, LayoutParams(-1, -1))
     }
 
+    override fun crumb(): String = "section=$section depth=${stack.size} refreshing=$refreshing"
+
     // ------------------------------------------------------------------ FootHost
     override fun push(build: () -> View) {
         stack.add(build)
@@ -253,6 +255,7 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
     }
 
     private fun showTop() {
+        Crash.crumb("football " + crumb())
         // while the numbers are being refreshed the data is changing underneath, so no page is built from it
         if (!loaded || refreshing) return
         popupObj.hide()

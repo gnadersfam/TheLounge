@@ -25,6 +25,9 @@ abstract class Screen(val act: MainActivity) : FrameLayout(act) {
     /** Logins or keys were changed on the phone. */
     open fun onKeysChanged() {}
 
+    /** A few words about where the user is in this page (for the problem log). */
+    open fun crumb(): String = ""
+
     /** Optional extra information when opened from elsewhere (for example a match to show). */
     open fun onArg(arg: Any?) {}
 }
