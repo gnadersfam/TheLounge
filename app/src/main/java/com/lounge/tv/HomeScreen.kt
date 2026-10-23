@@ -162,8 +162,16 @@ class HomeScreen(act: MainActivity) : Screen(act) {
             val idx = list.indexOfFirst { it.id == lastId }
             if (idx >= 0) resume.add("Live: " + list[idx].name to { act.playLive(list, idx) })
         }
-        for (h in History.all(act).filter { it.resumable() }.take(8)) {
-            resume.add("${h.title}  ${h.percent()}%" to { playHist(h) })
+        val seenSeries = HashSet<String>()
+        for (h in History.all(act)) {
+            if (resume.size >= 9) break
+            if (h.kind == "episode" && h.seriesId.isNotEmpty()) {
+                if (!seenSeries.add(h.seriesId)) continue
+                if (h.resumable()) resume.add("${h.title}  ${h.percent()}%" to { playHist(h) })
+                else if (h.percent() >= 95) resume.add("Next episode: " + h.title.substringBefore("  S") to { act.open("shows", "series:" + h.seriesId) })
+            } else if (h.resumable()) {
+                resume.add("${h.title}  ${h.percent()}%" to { playHist(h) })
+            }
         }
         if (resume.isNotEmpty()) {
             col.addView(Skin.text(act, "Carry on", 20f, Skin.CYAN, true), Skin.gapParams(act, bottomDp = 8))

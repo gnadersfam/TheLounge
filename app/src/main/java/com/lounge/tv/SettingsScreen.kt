@@ -84,6 +84,8 @@ class SettingsScreen(act: MainActivity) : Screen(act) {
         val preview = Store.bool(act, "preview", true)
         item("Picture preview in the guide: " + if (preview) "on" else "off",
             "Turn off if your provider only allows one connection at a time") { Store.putBool(act, "preview", !preview); build() }
+        val psound = Store.bool(act, "preview_sound", true)
+        item("Sound on the guide preview: " + if (psound) "on" else "off", "You hear the channel while you browse the guide") { Store.putBool(act, "preview_sound", !psound); build() }
         item("Reset category order", "Puts the Live TV categories back in the standard order and shows hidden ones") {
             val live = act.screen("live") as? LiveScreen
             if (live != null) live.resetOrder() else Store.deleteJson(act, "cat_cfg")

@@ -281,7 +281,9 @@ class PlayerActivity : Activity() {
         hintLine.text = "Left / Right  skip     OK  pause     Menu  audio and subtitles     Back  list"
         updateVodInfo()
         handler.removeCallbacks(hidePanel)
-        if (player?.isPlaying == true) handler.postDelayed(hidePanel, 5000)
+        // always hide by itself a few seconds after it opens (it used to wait for the picture to start playing,
+        // which was too late, so it never went away)
+        handler.postDelayed(hidePanel, 6000)
     }
 
     private fun fmt(ms: Long): String {

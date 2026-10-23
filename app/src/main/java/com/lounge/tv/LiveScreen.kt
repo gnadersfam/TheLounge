@@ -460,7 +460,6 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
                 .setConnectTimeoutMs(10000)
                 .setReadTimeoutMs(10000)
             p = ExoPlayer.Builder(act).setMediaSourceFactory(DefaultMediaSourceFactory(factory)).build()
-            p.volume = 0f
             p.setVideoSurfaceView(surface)
             p.addListener(object : Player.Listener {
                 override fun onRenderedFirstFrame() {
@@ -474,6 +473,7 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
             })
             player = p
         }
+        p.volume = if (Store.bool(act, "preview_sound", true)) 1f else 0f
         p.setMediaItem(MediaItem.fromUri(xt.streamUrl(ch.id, Store.ext(act))))
         p.prepare()
         p.playWhenReady = true
