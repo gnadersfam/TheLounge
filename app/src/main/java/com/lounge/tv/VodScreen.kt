@@ -428,13 +428,83 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
         }
     }
 
+    // ---- clearing Continue watching / Recently watched (hold OK on a card)
+    private fun hideName() = if (series) "cont_hide_shows" else "cont_hide_movies"
+
+    private fun hiddenMap(): HashMap<String, Long> {
+        val m = HashMap<String, Long>()
+        for (line in Store.str(act, hideName()).split("\n")) {
+            val p = line.split("|")
+            if (p.size == 2) p[1].toLongOrNull()?.let { m[p[0]] = it }
+        }
+        return m
+    }
+
+    private fun saveHidden(m: Map<String, Long>) {
+        Store.putStr(act, hideName(), m.entries.joinToString("\n") { it.key + "|" + it.value })
+    }
+
+    private fun rowKey(h: Hist): String = if (series) h.seriesId else h.id
+
+    private fun isHidden(m: Map<String, Long>, h: Hist): Boolean {
+        val t = m[rowKey(h)] ?: return false
+        return h.ts <= t
+    }
+
+    private fun cardMenu(r: PosterRow) {
+        val h = r.hist ?: return
+        val recent = genreKey == RECENT
+        val where = if (recent) "Continue watching" else "Recently watched"
+        popup.choices(
+            r.title,
+            listOf(
+                Pair("Remove from $where") {
+                    if (recent) {
+                        val m = hiddenMap(); m[rowKey(h)] = System.currentTimeMillis() / 1000; saveHidden(m)
+                    } else {
+                        for (x in History.all(act)) {
+                            if (series) { if (x.seriesId == h.seriesId) History.remove(act, x.key) }
+                            else if (x.key == h.key) History.remove(act, x.key)
+                        }
+                    }
+                    popup.hide(); rebuildGrid(); focusFirst()
+                },
+                Pair("Clear all of $where") { popup.hide(); confirmClear(recent, where) },
+                Pair("Cancel") { popup.hide() }
+            )
+        )
+    }
+
+    private fun confirmClear(recent: Boolean, where: String) {
+        popup.choices(
+            "Clear all of $where?",
+            listOf(
+                Pair("Yes, clear them all") {
+                    if (recent) {
+                        val m = hiddenMap(); val now = System.currentTimeMillis() / 1000
+                        for (row in shownItems) row.hist?.let { m[rowKey(it)] = now }
+                        saveHidden(m)
+                    } else {
+                        for (x in History.all(act)) {
+                            if (series && x.kind == "episode") History.remove(act, x.key)
+                            else if (!series && x.kind == "movie") History.remove(act, x.key)
+                        }
+                    }
+                    popup.hide(); rebuildGrid(); focusFirst()
+                },
+                Pair("No, keep them") { popup.hide() }
+            )
+        )
+    }
+
     private fun recentRows(): List<PosterRow> {
         val byId = HashMap<String, VodItem>()
         for (it in items) byId[it.id] = it
         val out = ArrayList<PosterRow>()
+        val hid = hiddenMap()
         if (!series) {
             for (h in History.all(act)) {
-                if (h.kind != "movie" || !h.resumable()) continue
+                if (h.kind != "movie" || !h.resumable() || isHidden(hid, h)) continue
                 val item = byId[h.id]
                 out.add(PosterRow(item, h, h.title, item?.icon ?: ""))
             }
@@ -445,6 +515,7 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
         val seen = HashSet<String>()
         for (h in History.all(act)) {
             if (h.kind != "episode" || h.seriesId.isEmpty() || !seen.add(h.seriesId)) continue
+            if (isHidden(hid, h)) continue
             val item = byId[h.seriesId]
             val name = item?.let { Vod.displayName(it.name) } ?: h.title
             if (h.resumable()) out.add(PosterRow(item, h, h.title, item?.icon ?: ""))
@@ -690,6 +761,9 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
             h.bar.visibility = if (r.hist != null) View.VISIBLE else View.GONE
             Img.load(h.img, r.icon, 230, 330)
             h.card.setOnClickListener { open(r) }
+            h.card.setOnLongClickListener(
+                if (r.hist != null && (genreKey == RECENT || genreKey == WATCHED)) View.OnLongClickListener { cardMenu(r); true } else null
+            )
             h.card.setOnFocusChangeListener { _, focused -> if (focused) showHead(r) }
         }
     }

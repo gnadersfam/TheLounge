@@ -55,6 +55,8 @@ class PlayerActivity : Activity() {
     private var lastPos = 0L
     private var tickCount = 0
     private var seekAccum = 0L
+    private var waitSecs = 0
+    private lateinit var slowMsg: TextView
 
     private val hidePanel = Runnable { panel.visibility = View.GONE; matchBox.visibility = View.GONE }
     private val hideToast = Runnable { toast.visibility = View.GONE }
@@ -62,6 +64,19 @@ class PlayerActivity : Activity() {
         override fun run() {
             tickCount++
             val p = player
+            if (p != null && p.playbackState == Player.STATE_BUFFERING) {
+                waitSecs++
+                if (waitSecs >= 20) {
+                    slowMsg.text = "Still waiting for the provider. Press Back and pick it again if it never starts."
+                    slowMsg.visibility = View.VISIBLE
+                } else if (waitSecs >= 5) {
+                    slowMsg.text = "Still starting... some providers are slow to begin a title"
+                    slowMsg.visibility = View.VISIBLE
+                }
+            } else {
+                waitSecs = 0
+                slowMsg.visibility = View.GONE
+            }
             if (!live && p != null) {
                 if (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING) lastPos = p.currentPosition
                 if (panel.visibility == View.VISIBLE) updateVodInfo()
@@ -81,6 +96,12 @@ class PlayerActivity : Activity() {
         root.addView(surface, FrameLayout.LayoutParams(-1, -1))
         spinner = ProgressBar(this).apply { visibility = View.GONE }
         root.addView(spinner, FrameLayout.LayoutParams(Skin.dp(this, 48), Skin.dp(this, 48), Gravity.CENTER))
+        slowMsg = Skin.text(this, "", 18f, Skin.TEXT, true).apply {
+            background = Skin.card(this@PlayerActivity, 14, 0xE607030F.toInt(), Skin.LINE)
+            setPadding(Skin.dp(this@PlayerActivity, 18), Skin.dp(this@PlayerActivity, 10), Skin.dp(this@PlayerActivity, 18), Skin.dp(this@PlayerActivity, 10))
+            visibility = View.GONE
+        }
+        root.addView(slowMsg, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER).apply { topMargin = Skin.dp(this@PlayerActivity, 100) })
 
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -284,7 +305,6 @@ class PlayerActivity : Activity() {
     private fun showVodInfo() {
         panel.visibility = View.VISIBLE
         line1.text = Session.vodTitle
-        line1Right.text = ""
         line3.text = ""
         hintLine.text = "Left / Right  skip     OK  pause     Menu  audio and subtitles     Back  list"
         updateVodInfo()
@@ -306,6 +326,16 @@ class PlayerActivity : Activity() {
         val p = player ?: return
         val dur = if (p.duration == C.TIME_UNSET) 0L else p.duration
         val pos = p.currentPosition
+        val vs = p.videoSize
+        line1Right.text = if (vs.height > 0) {
+            val tag = when {
+                vs.height >= 2000 -> "4K"
+                vs.height >= 1000 -> "1080p"
+                vs.height >= 700 -> "720p"
+                else -> "SD"
+            }
+            "" + vs.width + " x " + vs.height + "   " + tag
+        } else ""
         line2.text = (if (p.playWhenReady) "" else "Paused   ") + fmt(pos) + (if (dur > 0) "  /  " + fmt(dur) else "")
         bar.pct = if (dur > 0) ((pos * 100) / dur).toInt() else 0
     }
