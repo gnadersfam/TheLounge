@@ -30,6 +30,7 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
         const val SEARCH_KEY = "?search"
         const val HIDDEN_KEY = "?hidden"
         const val BACK_KEY = "?back"
+        const val FAV_KEY = "?fav"
         const val TWELVE_HOURS = 12 * 3600L
     }
 
@@ -54,6 +55,7 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
     private var hidden = HashSet<String>()
     private var hiddenChans = HashSet<String>()
     private var topChans = ArrayList<String>()
+    private var favChans = ArrayList<String>()
     private var showHidden = false
     private var currentKey = ALL_KEY
     private var query = ""
@@ -205,6 +207,7 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
         val cc = Store.loadJson(act, "chan_cfg").obj()
         hiddenChans = HashSet(cc["hidden"].arr().map { it.str() })
         topChans = ArrayList(cc["top"].arr().map { it.str() })
+        favChans = ArrayList(cc["fav"].arr().map { it.str() })
         val last = Store.str(act, "last_cat", ALL_KEY)
         currentKey = if (last == ALL_KEY || byCat.containsKey(last)) last else ALL_KEY
         if (currentKey in hidden) currentKey = ALL_KEY
@@ -271,6 +274,10 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
     // ------------------------------------------------------------------ categories
     private fun channelsFor(key: String): List<Chan> = tidy(key, when {
         key == ALL_KEY -> all
+        key == FAV_KEY -> {
+            val byId = all.associateBy { it.id }
+            favChans.mapNotNull { byId[it] }
+        }
         key.startsWith("?q:") -> {
             val q = key.substring(3)
             all.filter { it.name.contains(q, ignoreCase = true) }
@@ -296,7 +303,7 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
     private fun countIn(c: String): Int = (byCat[c] ?: emptyList()).count { it.id !in hiddenChans }
 
     private fun saveChanConfig() {
-        Store.saveJson(act, "chan_cfg", mapOf("hidden" to hiddenChans.toList(), "top" to topChans.toList()))
+        Store.saveJson(act, "chan_cfg", mapOf("hidden" to hiddenChans.toList(), "top" to topChans.toList(), "fav" to favChans.toList()))
     }
 
     /** Hold OK on a channel: move it to the top of this category, or hide it. */
@@ -305,6 +312,14 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
         val ch = guide.rows.getOrNull(row) ?: return
         val key = currentKey
         val choices = ArrayList<Pair<String, () -> Unit>>()
+        val isFav = ch.id in favChans
+        choices.add(Pair(if (isFav) "Remove from favourites" else "Add to favourites") {
+            if (isFav) favChans.remove(ch.id) else favChans.add(ch.id)
+            saveChanConfig()
+            hideOverlay()
+            refreshPanel()
+            if (key == FAV_KEY) reapply(row)
+        })
         if (!key.startsWith("?")) choices.add(Pair("Move to top") {
             topChans.remove("$key|${ch.id}")
             topChans.add("$key|${ch.id}")
@@ -352,6 +367,7 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
             for (c in fullOrder) if (c in hidden) e.add(CategoryPanel.Entry(c, c, countIn(c), CategoryPanel.CAT, true))
         } else {
             e.add(CategoryPanel.Entry(ALL_KEY, "All channels", all.size - hiddenChans.count { id -> all.any { it.id == id } }, CategoryPanel.ALL))
+            e.add(CategoryPanel.Entry(FAV_KEY, "Favourites", favChans.size, CategoryPanel.ALL))
             for (c in Cats.visible(fullOrder, hidden)) e.add(CategoryPanel.Entry(c, c, countIn(c), CategoryPanel.CAT))
             if (hidden.isNotEmpty()) e.add(CategoryPanel.Entry(HIDDEN_KEY, "Hidden (${hidden.size})", 0, CategoryPanel.HIDDEN_HEADER, true))
         }
@@ -378,6 +394,7 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
     private fun catLabelFor(key: String) {
         catLabel.text = when {
             key == ALL_KEY -> "ALL CHANNELS"
+            key == FAV_KEY -> "FAVOURITES"
             key.startsWith("?q:") -> "SEARCH: " + key.substring(3).uppercase()
             else -> key
         }

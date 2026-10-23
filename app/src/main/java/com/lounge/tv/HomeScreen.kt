@@ -163,13 +163,17 @@ class HomeScreen(act: MainActivity) : Screen(act) {
             if (idx >= 0) resume.add("Live: " + list[idx].name to { act.playLive(list, idx) })
         }
         val seenSeries = HashSet<String>()
+        val hideShows = History.hidden(act, true)
+        val hideMovies = History.hidden(act, false)
         for (h in History.all(act)) {
             if (resume.size >= 9) break
             if (h.kind == "episode" && h.seriesId.isNotEmpty()) {
                 if (!seenSeries.add(h.seriesId)) continue
+                if ((hideShows[h.seriesId] ?: -1L) >= h.ts) continue
                 if (h.resumable()) resume.add("${h.title}  ${h.percent()}%" to { playHist(h) })
                 else if (h.percent() >= 95) resume.add("Next episode: " + h.title.substringBefore("  S") to { act.open("shows", "series:" + h.seriesId) })
             } else if (h.resumable()) {
+                if (h.kind == "movie" && (hideMovies[h.id] ?: -1L) >= h.ts) continue
                 resume.add("${h.title}  ${h.percent()}%" to { playHist(h) })
             }
         }

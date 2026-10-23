@@ -15,6 +15,8 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.IOException
 
+private val FOUR_K = Regex("(?i)(\\b4k\\b|\\buhd\\b|2160)")
+
 /** Movies or Shows (English only, from your IPTV): genres on the left, a poster grid, episodes for a series. */
 class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), MenuKeyHandler {
 
@@ -145,8 +147,25 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
         if (visibility == View.VISIBLE) onShow()
     }
 
+    /** A film is about to play on top: let go of the poster pictures so the video has the memory. */
+    override fun onActivityPause() {
+        for (i in 0 until grid.childCount) (grid.getChildAt(i) as? ViewGroup)?.let { clearImgs(it) }
+        grid.recycledViewPool.clear()
+        Img.clear()
+        System.gc()
+    }
+
+    private fun clearImgs(v: ViewGroup) {
+        for (i in 0 until v.childCount) {
+            val c = v.getChildAt(i)
+            if (c is ImageView) c.setImageDrawable(null) else if (c is ViewGroup) clearImgs(c)
+        }
+    }
+
     override fun onActivityResume() {
-        if (visibility == View.VISIBLE && (genreKey == RECENT || genreKey == WATCHED)) rebuildGrid()
+        if (visibility != View.VISIBLE) return
+        if (genreKey == RECENT || genreKey == WATCHED) rebuildGrid()
+        else if (genreKey != GENRES && shownItems.isNotEmpty()) adapter.notifyDataSetChanged()
     }
 
     override fun focusFirst() {
@@ -755,8 +774,9 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
             val r = shownItems[position]
             h.name.text = r.title
             val rating = r.item?.rating ?: 0.0
-            h.badge.text = if (r.next) "NEXT" else if (rating > 0) "★ $rating" else ""
-            h.badge.visibility = if (r.next || rating > 0) View.VISIBLE else View.GONE
+            val is4k = FOUR_K.containsMatchIn((r.item?.name ?: r.title) + " " + (r.item?.cat ?: ""))
+            h.badge.text = if (r.next) "NEXT" else (if (is4k) "4K" else "") + (if (is4k && rating > 0) "  " else "") + (if (rating > 0) "★ $rating" else "")
+            h.badge.visibility = if (r.next || rating > 0 || is4k) View.VISIBLE else View.GONE
             h.bar.pct = r.hist?.percent() ?: 0
             h.bar.visibility = if (r.hist != null) View.VISIBLE else View.GONE
             Img.load(h.img, r.icon, 230, 330)

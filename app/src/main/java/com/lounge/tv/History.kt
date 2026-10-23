@@ -74,6 +74,16 @@ object History {
         })
     }
 
+    /** Titles cleared from Continue watching: key (show id or movie id) -> time cleared. */
+    fun hidden(c: Context, shows: Boolean): Map<String, Long> {
+        val m = HashMap<String, Long>()
+        for (line in Store.str(c, if (shows) "cont_hide_shows" else "cont_hide_movies").split("\n")) {
+            val p = line.split("|")
+            if (p.size == 2) p[1].toLongOrNull()?.let { m[p[0]] = it }
+        }
+        return m
+    }
+
     fun clearCache() {
         cache = null
     }

@@ -17,6 +17,10 @@ object Session {
     var vodResume: Long = 0L
     var live: Boolean = true
 
+    /** Live channel being watched and the one before it (for the Left = last channel button). */
+    var curChanId: String = ""
+    var prevChanId: String = ""
+
     /** Short match summary shown on top of the picture when a match is opened from the football pages. */
     var matchPanel: String = ""
 }
@@ -42,7 +46,46 @@ object Store {
     fun pass(c: Context) = str(c, "pass")
     fun hasLogin(c: Context) = server(c).isNotBlank() && user(c).isNotBlank() && pass(c).isNotBlank()
 
+    // Settings that belong to one IPTV login (hidden channels, order, favourites, history...). They are put away when you
+    // pair a different login and come back when you pair the first one again.
+    private val LOGIN_FILES = listOf("cat_cfg", "chan_cfg", "history")
+    private val LOGIN_PREFS = listOf("last_cat", "last_chan", "cont_hide_movies", "cont_hide_shows")
+
+    private fun loginId(server: String, user: String): String =
+        Integer.toHexString((Xtream.clean(server).lowercase() + "|" + user.trim().lowercase()).hashCode())
+
+    private fun isLoginPref(k: String) = k in LOGIN_PREFS || k.startsWith("vod_pin_")
+
+    private fun snapshotSettings(c: Context, id: String) {
+        val files = LinkedHashMap<String, Any?>()
+        for (f in LOGIN_FILES) loadJson(c, f)?.let { files[f] = it }
+        val p = LinkedHashMap<String, Any?>()
+        for ((k, v) in prefs(c).all) if (isLoginPref(k) && v is String) p[k] = v
+        saveJson(c, "login_$id", mapOf("files" to files, "prefs" to p))
+    }
+
+    private fun restoreSettings(c: Context, id: String) {
+        for (f in LOGIN_FILES) deleteJson(c, f)
+        val e = prefs(c).edit()
+        for (k in prefs(c).all.keys) if (isLoginPref(k)) e.remove(k)
+        val snap = loadJson(c, "login_$id")
+        if (snap != null) {
+            val o = snap.obj()
+            for ((k, v) in o["files"].obj()) saveJson(c, k, v)
+            for ((k, v) in o["prefs"].obj()) e.putString(k, v.str())
+        }
+        e.apply()
+        History.clearCache()
+    }
+
     fun saveLogin(c: Context, server: String, user: String, pass: String) {
+        val newId = loginId(server, user)
+        val oldId = if (hasLogin(c)) str(c, "cfg_owner").ifEmpty { loginId(server(c), user(c)) } else str(c, "cfg_owner")
+        if (oldId.isNotEmpty() && oldId != newId) {
+            snapshotSettings(c, oldId)
+            restoreSettings(c, newId)
+        }
+        putStr(c, "cfg_owner", newId)
         prefs(c).edit().putString("server", server.trim()).putString("user", user.trim())
             .putString("pass", pass.trim()).apply()
         // a new login means the saved lists belong to someone else

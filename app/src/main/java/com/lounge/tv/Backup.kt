@@ -4,7 +4,7 @@ import android.content.Context
 
 /** Copy of the things worth keeping if the app is ever reinstalled. Never includes logins or keys. */
 object Backup {
-    private val FILES = listOf("cat_cfg", "f_picks", "f_watchlist", "history")
+    private val FILES = listOf("cat_cfg", "chan_cfg", "f_picks", "f_watchlist", "history")
     private val PREFS_STR = listOf("last_cat", "last_chan")
     private val PREFS_BOOL = listOf("preview", "sp_pause_video")
 

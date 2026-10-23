@@ -225,6 +225,10 @@ class PlayerActivity : Activity() {
             return
         }
         Session.xt = xt
+        if (Session.curChanId != ch.id) {
+            Session.prevChanId = Session.curChanId
+            Session.curChanId = ch.id
+        }
         if (resetRetries) {
             retries = 0
             triedAlt = false
@@ -250,7 +254,7 @@ class PlayerActivity : Activity() {
         line2.text = ""
         line3.text = ""
         bar.pct = 0
-        hintLine.text = "Up / Down  change channel     OK  info     Menu  audio and subtitles     Back  guide"
+        hintLine.text = "Up / Down  change     Left  last channel     OK  info     Menu  audio and subtitles     Back  guide"
         handler.removeCallbacks(hidePanel)
         handler.postDelayed(hidePanel, 6000)
         val token = ++epgToken
@@ -285,6 +289,17 @@ class PlayerActivity : Activity() {
             line2.text = "Nothing listed right now"
         }
         line3.text = if (nxt != null) "Next  " + Skin.hhmm(nxt.start) + "  " + nxt.title else ""
+    }
+
+    /** Left on a live channel: jump back to the channel you were on before this one. */
+    private fun lastChannel() {
+        val id = Session.prevChanId
+        if (id.isEmpty()) { flash("No previous channel yet"); return }
+        val i = Session.channels.indexOfFirst { it.id == id }
+        if (i < 0) { flash("The last channel isn't in this list"); return }
+        Session.index = i
+        handler.removeCallbacks(hidePanel)
+        startChannel(true)
     }
 
     private fun change(delta: Int) {
@@ -524,8 +539,10 @@ class PlayerActivity : Activity() {
                 if (live) change(1) else panel.visibility = View.GONE
                 return true
             }
-            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                if (!live) {
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_LAST_CHANNEL -> {
+                if (live) {
+                    if (rep == 0) lastChannel()
+                } else {
                     seek(if (rep > 6) -60000L else -10000L)
                     flash("-" + (if (rep > 6) "60" else "10") + " s")
                 }
