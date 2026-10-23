@@ -1,6 +1,7 @@
 package com.lounge.tv
 
 import android.app.Activity
+import android.content.Context
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -10,6 +11,9 @@ import android.view.KeyEvent
 import android.view.SurfaceView
 import android.view.View
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -545,28 +549,86 @@ class PlayerActivity : Activity() {
         }
     }
 
-    private fun pickTwitch() {
+    /** kind: "follow", "top" or "search" ("" = follow, or top when you follow nobody live). */
+    private fun pickTwitch(kind: String = "", q: String = "") {
         openMenu("Twitch window", listOf(Pair("Loading channels...") { }))
         Bg.run {
+            var k = kind
             val list: List<Twitch.Stream> = try {
-                val f = Twitch.followed(this)
-                if (f.isNotEmpty()) f else Twitch.top(this)
+                when (k) {
+                    "search" -> Twitch.search(this, q)
+                    "top" -> Twitch.top(this)
+                    else -> {
+                        val f = Twitch.followed(this)
+                        if (f.isNotEmpty()) { k = "follow"; f } else { k = "top"; Twitch.top(this) }
+                    }
+                }
             } catch (e: Throwable) {
                 emptyList()
             }
+            val kk = k
             Bg.ui {
-                if (menuVisible()) {
-                    val items = ArrayList<Pair<String, () -> Unit>>()
-                    for (s in list.take(8)) {
-                        val game = if (s.game.isNotEmpty()) "  -  " + s.game else ""
-                        items.add(Pair(s.name + game) { openTwitchWindow(s); closeMenu() })
-                    }
-                    if (list.isEmpty()) items.add(Pair("No channels came back") { closeMenu() })
-                    items.add(Pair("Back") { mainMenu() })
-                    openMenu("Twitch window", items)
-                }
+                if (menuVisible()) showTwitchPage(list, kk, q, 0)
             }
         }
+    }
+
+    private fun showTwitchPage(list: List<Twitch.Stream>, kind: String, q: String, page: Int) {
+        val per = 6
+        val pages = Math.max(1, (list.size + per - 1) / per)
+        val pg = page.coerceIn(0, pages - 1)
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items.add(Pair("Search channels") { twitchSearch() })
+        if (kind != "top") items.add(Pair("Top live channels") { pickTwitch("top") })
+        if (kind != "follow") items.add(Pair("Channels I follow") { pickTwitch("follow") })
+        for (s in list.drop(pg * per).take(per)) {
+            val game = if (s.game.isNotEmpty()) "  -  " + s.game else ""
+            items.add(Pair(s.name + game) { openTwitchWindow(s); closeMenu() })
+        }
+        if (list.isEmpty()) items.add(Pair(if (kind == "search") "No live channel found" else "No channels came back") { })
+        if (pg > 0) items.add(Pair("Previous channels") { showTwitchPage(list, kind, q, pg - 1) })
+        if (pg < pages - 1) items.add(Pair("More channels  (" + (pg + 1) + " of " + pages + ")") { showTwitchPage(list, kind, q, pg + 1) })
+        items.add(Pair("Back") { mainMenu() })
+        val head = when (kind) {
+            "follow" -> "Twitch: channels you follow"
+            "search" -> "Twitch: results for $q"
+            else -> "Twitch: top live channels"
+        }
+        openMenu(head, items)
+    }
+
+    private fun twitchSearch() {
+        menu.removeAllViews()
+        menu.addView(Skin.text(this, "Search live Twitch channels", 16f, Skin.CYAN, true).apply { setPadding(0, 0, 0, Skin.dp(this@PlayerActivity, 10)) })
+        val et = EditText(this).apply {
+            setSingleLine()
+            Skin.setSize(this, 18f)
+            setTextColor(Skin.TEXT)
+            setHintTextColor(Skin.DIM)
+            hint = "Name or topic, e.g. football"
+            background = Skin.card(this@PlayerActivity, 12)
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+            setPadding(Skin.dp(this@PlayerActivity, 14), Skin.dp(this@PlayerActivity, 10), Skin.dp(this@PlayerActivity, 14), Skin.dp(this@PlayerActivity, 10))
+        }
+        fun go() {
+            val t = et.text.toString().trim()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(et.windowToken, 0)
+            if (t.isEmpty()) pickTwitch() else pickTwitch("search", t)
+        }
+        et.setOnEditorActionListener { _, _, _ ->
+            go()
+            true
+        }
+        menu.addView(et, Skin.gapParams(this, bottomDp = 10))
+        menu.addView(Skin.button(this, "Search") { go() }, Skin.gapParams(this, -1, -2, 6))
+        menu.addView(Skin.button(this, "Back") {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(et.windowToken, 0)
+            pickTwitch()
+        }, Skin.gapParams(this, -1, -2, 0))
+        menu.visibility = View.VISIBLE
+        et.requestFocus()
     }
 
     private fun openTwitchWindow(s: Twitch.Stream) {

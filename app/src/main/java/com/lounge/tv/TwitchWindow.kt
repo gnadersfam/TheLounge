@@ -3,7 +3,7 @@ package com.lounge.tv
 import android.app.Activity
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
-import android.view.SurfaceView
+import android.view.TextureView
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -25,6 +25,7 @@ class TwitchWindow(
 
     companion object {
         val SIZES = listOf(Size("Small", 320, 180), Size("Medium", 400, 225), Size("Large", 560, 315), Size("Half screen", 640, 360))
+        val ALPHAS = intArrayOf(100, 75, 50, 25)
     }
 
     private var player: ExoPlayer? = null
@@ -36,8 +37,14 @@ class TwitchWindow(
         private set
     var sizeIdx: Int = Store.str(act, "twitch_win_size", "1").toIntOrNull()?.coerceIn(0, SIZES.size - 1) ?: 1
         private set
+    var alphaIdx: Int = Store.str(act, "twitch_win_alpha", "0").toIntOrNull()?.coerceIn(0, ALPHAS.size - 1) ?: 0
+        private set
     var hearTwitch: Boolean = false
         private set
+
+    // where the window sits: 0 = left / top edge, 1 = right / bottom edge
+    private var fx = Store.str(act, "twitch_win_fx", "0.97").toFloatOrNull()?.coerceIn(0f, 1f) ?: 0.97f
+    private var fy = Store.str(act, "twitch_win_fy", "0.88").toFloatOrNull()?.coerceIn(0f, 1f) ?: 0.88f
 
     val active: Boolean get() = box != null
 
@@ -54,8 +61,7 @@ class TwitchWindow(
             cornerRadius = Skin.dp(act, 12).toFloat()
         }
         val pad = Skin.dp(act, 3)
-        val sv = SurfaceView(act)
-        sv.setZOrderMediaOverlay(true)
+        val sv = TextureView(act)
         b.addView(sv, FrameLayout.LayoutParams(-1, -1).apply { setMargins(pad, pad, pad, pad) })
         val tag = Skin.text(act, "LIVE  $name", 13f, Skin.TEXT, true).apply {
             background = Skin.card(act, 8, 0xCC07030F.toInt(), 0xCC07030F.toInt())
@@ -68,6 +74,7 @@ class TwitchWindow(
         }
         b.addView(st, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(0, 0, Skin.dp(act, 10), Skin.dp(act, 10)) })
         soundTag = st
+        b.alpha = ALPHAS[alphaIdx] / 100f
         box = b
         root.addView(b, params())
 
@@ -76,7 +83,7 @@ class TwitchWindow(
             .setTargetBufferBytes(12 * 1024 * 1024)
             .build()
         val p = ExoPlayer.Builder(act).setLoadControl(lc).build()
-        p.setVideoSurfaceView(sv)
+        p.setVideoTextureView(sv)
         val tp = p.trackSelectionParameters.buildUpon()
         tp.setMaxVideoSize(854, 480) // a small picture does not need more, and it saves memory
         p.trackSelectionParameters = tp.build()
@@ -101,9 +108,13 @@ class TwitchWindow(
 
     private fun params(): FrameLayout.LayoutParams {
         val s = SIZES[sizeIdx]
-        return FrameLayout.LayoutParams(Skin.dp(act, s.w), Skin.dp(act, s.h), Gravity.BOTTOM or Gravity.END).apply {
-            rightMargin = Skin.dp(act, 32)
-            bottomMargin = Skin.dp(act, 120)
+        val w = Skin.dp(act, s.w)
+        val h = Skin.dp(act, s.h)
+        val sw = act.resources.displayMetrics.widthPixels
+        val sh = act.resources.displayMetrics.heightPixels
+        return FrameLayout.LayoutParams(w, h, Gravity.TOP or Gravity.START).apply {
+            leftMargin = (fx * Math.max(0, sw - w)).toInt()
+            topMargin = (fy * Math.max(0, sh - h)).toInt()
         }
     }
 
@@ -112,6 +123,35 @@ class TwitchWindow(
         Store.putStr(act, "twitch_win_size", sizeIdx.toString())
         box?.layoutParams = params()
         box?.requestLayout()
+    }
+
+    fun setAlphaStep(i: Int) {
+        alphaIdx = i.coerceIn(0, ALPHAS.size - 1)
+        Store.putStr(act, "twitch_win_alpha", alphaIdx.toString())
+        box?.alpha = ALPHAS[alphaIdx] / 100f
+    }
+
+    /** Slide the window by this many pixels. */
+    fun moveBy(dx: Int, dy: Int) {
+        val s = SIZES[sizeIdx]
+        val sw = act.resources.displayMetrics.widthPixels
+        val sh = act.resources.displayMetrics.heightPixels
+        val rx = Math.max(1, sw - Skin.dp(act, s.w))
+        val ry = Math.max(1, sh - Skin.dp(act, s.h))
+        fx = (fx + dx.toFloat() / rx).coerceIn(0f, 1f)
+        fy = (fy + dy.toFloat() / ry).coerceIn(0f, 1f)
+        box?.layoutParams = params()
+        box?.requestLayout()
+    }
+
+    fun savePos() {
+        Store.putStr(act, "twitch_win_fx", fx.toString())
+        Store.putStr(act, "twitch_win_fy", fy.toString())
+    }
+
+    /** Show a short instruction on the window while it is being moved (null puts the normal label back). */
+    fun hint(text: String?) {
+        soundTag?.text = text ?: if (hearTwitch) "Sound on" else "Muted"
     }
 
     /** Switch between hearing the film and hearing Twitch. */
