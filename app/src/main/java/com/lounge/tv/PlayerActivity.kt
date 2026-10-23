@@ -329,9 +329,9 @@ class PlayerActivity : Activity() {
         val vs = p.videoSize
         line1Right.text = if (vs.height > 0) {
             val tag = when {
-                vs.height >= 2000 -> "4K"
-                vs.height >= 1000 -> "1080p"
-                vs.height >= 700 -> "720p"
+                vs.width >= 3200 || vs.height >= 2000 -> "4K"
+                vs.width >= 1800 || vs.height >= 1000 -> "1080p"
+                vs.width >= 1200 || vs.height >= 700 -> "720p"
                 else -> "SD"
             }
             "" + vs.width + " x " + vs.height + "   " + tag
