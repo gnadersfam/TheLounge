@@ -50,6 +50,9 @@ class PlayerActivity : Activity() {
     private lateinit var matchBox: TextView
     private lateinit var rootView: FrameLayout
     private var tw: TwitchWindow? = null
+    private var moving = 0 // 1 = moving the Twitch window, 2 = moving the menu
+    private var menuDx = 0f // menu position, as a share of the screen width / height away from the middle
+    private var menuDy = 0f
 
     private var player: ExoPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -160,6 +163,9 @@ class PlayerActivity : Activity() {
             visibility = View.GONE
         }
         root.addView(menu, FrameLayout.LayoutParams(Skin.dp(this, 420), -2, Gravity.CENTER))
+        menuDx = Store.str(this, "menu_dx", "0").toFloatOrNull() ?: 0f
+        menuDy = Store.str(this, "menu_dy", "0").toFloatOrNull() ?: 0f
+        applyMenuPos()
         setContentView(root)
         rootView = root
         live = Session.live
@@ -517,6 +523,7 @@ class PlayerActivity : Activity() {
         items.add(Pair("Audio") { trackMenu(C.TRACK_TYPE_AUDIO, "Audio") })
         items.add(Pair("Subtitles") { trackMenu(C.TRACK_TYPE_TEXT, "Subtitles") })
         items.add(Pair("Twitch window") { twitchMenu() })
+        items.add(Pair("Move this menu") { startMove(2) })
         if (live) items.add(Pair("Restart this channel") { closeMenu(); startChannel(true) })
         else items.add(Pair("Start over") { closeMenu(); player?.seekTo(0); lastPos = 0; showVodInfo() })
         items.add(Pair("Close") { closeMenu() })
@@ -535,10 +542,9 @@ class PlayerActivity : Activity() {
         val w = tw
         if (w != null && w.active) {
             val items = ArrayList<Pair<String, () -> Unit>>()
-            for ((i, s) in TwitchWindow.SIZES.withIndex()) {
-                val mark = if (i == w.sizeIdx) "   (on)" else ""
-                items.add(Pair("Size: " + s.label + mark) { w.setSize(i); closeMenu() })
-            }
+            items.add(Pair("Size: " + TwitchWindow.SIZES[w.sizeIdx].label + "   (press to change)") { w.setSize((w.sizeIdx + 1) % TwitchWindow.SIZES.size); twitchMenu() })
+            items.add(Pair("See-through: " + TwitchWindow.ALPHAS[w.alphaIdx] + "%   (press to change)") { w.setAlphaStep((w.alphaIdx + 1) % TwitchWindow.ALPHAS.size); twitchMenu() })
+            items.add(Pair("Move window") { startMove(1) })
             items.add(Pair(if (w.hearTwitch) "Hear the film again" else "Hear Twitch instead") { w.swapSound(); closeMenu() })
             items.add(Pair("Change channel") { pickTwitch() })
             items.add(Pair("Hide Twitch window") { w.close(); tw = null; closeMenu() })
@@ -638,6 +644,81 @@ class PlayerActivity : Activity() {
             tw = w
         }
         w.open(s.login, s.name)
+        menu.bringToFront() // the menu always sits in front of the Twitch picture
+        toast.bringToFront()
+    }
+
+    // ------------------------------------------------------------------ moving the Twitch window or the menu
+    private fun applyMenuPos() {
+        val dm = resources.displayMetrics
+        val mw = if (menu.width > 0) menu.width else Skin.dp(this, 420)
+        val mh = if (menu.height > 0) menu.height else Skin.dp(this, 300)
+        val maxX = Math.max(0, (dm.widthPixels - mw) / 2).toFloat()
+        val maxY = Math.max(0, (dm.heightPixels - mh) / 2).toFloat()
+        menu.translationX = (menuDx * dm.widthPixels).coerceIn(-maxX, maxX)
+        menu.translationY = (menuDy * dm.heightPixels).coerceIn(-maxY, maxY)
+    }
+
+    private fun startMove(what: Int) {
+        if (what == 1) {
+            val w = tw ?: return
+            if (!w.active) return
+            closeMenu()
+            w.hint("Arrows move  -  OK when done")
+        } else {
+            menu.removeAllViews()
+            menu.addView(Skin.text(this, "Move the menu", 16f, Skin.CYAN, true).apply { setPadding(0, 0, 0, Skin.dp(this@PlayerActivity, 8)) })
+            menu.addView(Skin.text(this, "Arrows move it.  OK when done.", 14f, Skin.TEXT))
+            menu.visibility = View.VISIBLE
+        }
+        moving = what
+    }
+
+    private fun nudge(dx: Int, dy: Int) {
+        val dm = resources.displayMetrics
+        if (moving == 1) {
+            tw?.moveBy(dx, dy)
+        } else if (moving == 2) {
+            menuDx += dx.toFloat() / dm.widthPixels
+            menuDy += dy.toFloat() / dm.heightPixels
+            applyMenuPos()
+            // keep the saved value inside the screen too
+            menuDx = menu.translationX / dm.widthPixels
+            menuDy = menu.translationY / dm.heightPixels
+        }
+    }
+
+    private fun finishMove() {
+        val was = moving
+        moving = 0
+        if (was == 1) {
+            tw?.savePos()
+            tw?.hint(null)
+            flash("Saved")
+        } else if (was == 2) {
+            Store.putStr(this, "menu_dx", menuDx.toString())
+            Store.putStr(this, "menu_dy", menuDy.toString())
+            mainMenu()
+        }
+    }
+
+    override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+        if (moving != 0) {
+            val k = e.keyCode
+            if (k == KeyEvent.KEYCODE_VOLUME_UP || k == KeyEvent.KEYCODE_VOLUME_DOWN || k == KeyEvent.KEYCODE_VOLUME_MUTE) return super.dispatchKeyEvent(e)
+            if (e.action == KeyEvent.ACTION_DOWN) {
+                val step = Skin.dp(this, if (e.repeatCount > 3) 60 else 20)
+                when (k) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> nudge(-step, 0)
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> nudge(step, 0)
+                    KeyEvent.KEYCODE_DPAD_UP -> nudge(0, -step)
+                    KeyEvent.KEYCODE_DPAD_DOWN -> nudge(0, step)
+                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BACK -> if (e.repeatCount == 0) finishMove()
+                }
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(e)
     }
 
     private fun trackLabel(lang: String?, label: String?, channels: Int, n: Int): String {
