@@ -56,6 +56,7 @@ class PlayerActivity : Activity() {
     private var tickCount = 0
     private var seekAccum = 0L
     private var waitSecs = 0
+    private var pendingSeek = 0L
     private lateinit var slowMsg: TextView
 
     private val hidePanel = Runnable { panel.visibility = View.GONE; matchBox.visibility = View.GONE }
@@ -78,7 +79,7 @@ class PlayerActivity : Activity() {
                 slowMsg.visibility = View.GONE
             }
             if (!live && p != null) {
-                if (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING) lastPos = p.currentPosition
+                if ((p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING) && pendingSeek == 0L) lastPos = p.currentPosition
                 if (panel.visibility == View.VISIBLE) updateVodInfo()
                 if (tickCount % 10 == 0) saveProgress()
             }
@@ -181,6 +182,12 @@ class PlayerActivity : Activity() {
                 spinner.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
                 if (state == Player.STATE_READY) {
                     retries = 0
+                    if (pendingSeek > 0L) {
+                        val t = pendingSeek
+                        pendingSeek = 0L
+                        player?.seekTo(t)
+                        lastPos = t
+                    }
                     if (live && ext != Store.ext(this@PlayerActivity)) Store.setExt(this@PlayerActivity, ext)
                 }
                 if (state == Player.STATE_ENDED && !live) {
@@ -296,7 +303,9 @@ class PlayerActivity : Activity() {
             return
         }
         lastPos = Session.vodResume
-        p.setMediaItem(MediaItem.fromUri(Session.vodUrl), lastPos.coerceAtLeast(0L))
+        // open at the start so a picture shows quickly, then jump to where you were (some providers are slow to open mid-file)
+        pendingSeek = if (lastPos > 5000L) lastPos else 0L
+        p.setMediaItem(MediaItem.fromUri(Session.vodUrl), if (pendingSeek > 0L) 0L else lastPos.coerceAtLeast(0L))
         p.prepare()
         p.playWhenReady = true
         showVodInfo()
@@ -341,7 +350,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun saveProgress() {
-        if (live) return
+        if (live || pendingSeek > 0L) return
         val p = player
         val dur = if (p == null || p.duration == C.TIME_UNSET) 0L else p.duration
         val pos = if (p != null && p.currentPosition > 0) p.currentPosition else lastPos
@@ -391,6 +400,7 @@ class PlayerActivity : Activity() {
             handler.postDelayed({
                 if (player != null) {
                     if (live) startChannel(false) else {
+                        pendingSeek = 0L
                         player?.setMediaItem(MediaItem.fromUri(Session.vodUrl), lastPos.coerceAtLeast(0L))
                         player?.prepare()
                         player?.playWhenReady = true
