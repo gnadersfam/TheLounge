@@ -9,7 +9,8 @@ object Pins {
     private val SKY_MAIN = Regex("""\bSKY\s*SPORTS?\s*MAIN\s*EVENT\b""")
     private val TNT = Regex("""\b(?:TNT|BT)\s*SPORTS?\s*([1-5])\b""")
 
-    private fun applies(key: String): Boolean = key.uppercase().replace(" ", "") == "UK|SPORTS"
+    // the category is called "ENGLISH UK | SPORTS" (or "UK | SPORTS" on some lists); "UK | SPORTS HEVC" and the like are left alone
+    private fun applies(key: String): Boolean = key.uppercase().replace(" ", "").endsWith("UK|SPORTS")
 
     private fun clean(name: String): String = name.uppercase().replace(Regex("[^A-Z0-9]+"), " ").trim()
 
