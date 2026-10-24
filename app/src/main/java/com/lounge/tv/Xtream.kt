@@ -72,32 +72,56 @@ class Xtream(private val base: String, private val user: String, private val pas
         return t
     }
 
+    /** The provider's own explanation, when it sends one (shortened, with the login hidden). */
+    private fun reason(c: HttpURLConnection): String {
+        return try {
+            val es = c.errorStream ?: return ""
+            val raw = if ((c.contentEncoding ?: "").equals("gzip", true)) java.util.zip.GZIPInputStream(es) else es
+            val t = raw.bufferedReader().use { it.readText() }
+            redact(t.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()).take(160)
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
     private fun open(url: String, readTimeoutMs: Int): HttpURLConnection {
         val known = goodUa[base]
         val order = if (known != null) listOf(known) else API_UAS
         var lastCode = 0
+        var lastWhy = ""
         for (ua in order) {
-            try {
-                val c = URL(url).openConnection() as HttpURLConnection
-                c.connectTimeout = 20000
-                c.readTimeout = readTimeoutMs
-                c.setRequestProperty("User-Agent", ua)
-                c.setRequestProperty("Accept-Encoding", "gzip")
-                val code = c.responseCode
-                if (code in 200..299) {
-                    goodUa[base] = ua
-                    return c
+            var tries = 0
+            while (tries < 2) {
+                tries++
+                try {
+                    val c = URL(url).openConnection() as HttpURLConnection
+                    c.connectTimeout = 20000
+                    c.readTimeout = readTimeoutMs
+                    c.setRequestProperty("User-Agent", ua)
+                    c.setRequestProperty("Accept-Encoding", "gzip")
+                    val code = c.responseCode
+                    if (code in 200..299) {
+                        goodUa[base] = ua
+                        return c
+                    }
+                    lastCode = code
+                    lastWhy = reason(c)
+                    c.disconnect()
+                    // wrong password, missing page or "slow down": another name will not help, and retrying could get the login blocked
+                    if (code == 401 || code == 404 || code == 429 || code < 400) throw IOException(msg(lastCode, lastWhy))
+                    // a busy or protective provider: wait a moment and ask once more before trying another name
+                    if (code >= 500 && tries < 2) {
+                        try { Thread.sleep(2500) } catch (ie: InterruptedException) { break }
+                    } else break
+                } catch (e: IOException) {
+                    throw IOException(redact(e.message ?: "Connection problem"))
                 }
-                c.disconnect()
-                lastCode = code
-                // wrong password, missing page or "slow down": another name will not help, and retrying could get the login blocked
-                if (code == 401 || code == 404 || code == 429 || code < 400) break
-            } catch (e: IOException) {
-                throw IOException(redact(e.message ?: "Connection problem"))
             }
         }
-        throw IOException("The server answered HTTP $lastCode")
+        throw IOException(msg(lastCode, lastWhy))
     }
+
+    private fun msg(code: Int, why: String): String = "The server answered HTTP $code" + if (why.isNotBlank()) " - " + why else ""
 
     private fun stream(c: HttpURLConnection): InputStream {
         val s = c.inputStream
