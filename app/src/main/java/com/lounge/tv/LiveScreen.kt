@@ -288,6 +288,7 @@ class LiveScreen(act: MainActivity) : Screen(act), MenuKeyHandler {
     /** Takes out the channels you hid and puts the ones you moved to the top first (for this category). */
     private fun tidy(key: String, list: List<Chan>): List<Chan> {
         var l = if (hiddenChans.isEmpty()) list else list.filter { it.id !in hiddenChans }
+        l = Pins.apply(key, l) // Sky Sports Main Event, then TNT Sports 1-5, first in UK | SPORTS
         if (topChans.isNotEmpty()) {
             val prefix = "$key|"
             val pos = HashMap<String, Int>()
