@@ -36,6 +36,11 @@ class Xtream(private val base: String, private val user: String, private val pas
         const val API_UA = "Mozilla/5.0 (The Lounge)"
         const val STREAM_UA = "VLC/3.0.20 LibVLC/3.0.20"
 
+        // Some providers refuse names they don't know. If the first name is refused, the others are tried,
+        // and the one that works is remembered for that server.
+        private val API_UAS = listOf(API_UA, STREAM_UA, "okhttp/4.12.0", "IPTVSmartersPro")
+        private val goodUa = java.util.concurrent.ConcurrentHashMap<String, String>()
+
         fun clean(server: String): String {
             var s = server.trim().trimEnd('/')
             if (!Regex("""^https?://""", RegexOption.IGNORE_CASE).containsMatchIn(s)) s = "http://$s"
@@ -68,21 +73,30 @@ class Xtream(private val base: String, private val user: String, private val pas
     }
 
     private fun open(url: String, readTimeoutMs: Int): HttpURLConnection {
-        try {
-            val c = URL(url).openConnection() as HttpURLConnection
-            c.connectTimeout = 20000
-            c.readTimeout = readTimeoutMs
-            c.setRequestProperty("User-Agent", API_UA)
-            c.setRequestProperty("Accept-Encoding", "gzip")
-            val code = c.responseCode
-            if (code !in 200..299) {
+        val known = goodUa[base]
+        val order = if (known != null) listOf(known) else API_UAS
+        var lastCode = 0
+        for (ua in order) {
+            try {
+                val c = URL(url).openConnection() as HttpURLConnection
+                c.connectTimeout = 20000
+                c.readTimeout = readTimeoutMs
+                c.setRequestProperty("User-Agent", ua)
+                c.setRequestProperty("Accept-Encoding", "gzip")
+                val code = c.responseCode
+                if (code in 200..299) {
+                    goodUa[base] = ua
+                    return c
+                }
                 c.disconnect()
-                throw IOException("The server answered HTTP $code")
+                lastCode = code
+                // wrong password, missing page or "slow down": another name will not help, and retrying could get the login blocked
+                if (code == 401 || code == 404 || code == 429 || code < 400) break
+            } catch (e: IOException) {
+                throw IOException(redact(e.message ?: "Connection problem"))
             }
-            return c
-        } catch (e: IOException) {
-            throw IOException(redact(e.message ?: "Connection problem"))
         }
+        throw IOException("The server answered HTTP $lastCode")
     }
 
     private fun stream(c: HttpURLConnection): InputStream {
