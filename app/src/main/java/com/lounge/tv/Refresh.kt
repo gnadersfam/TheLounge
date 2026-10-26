@@ -99,6 +99,47 @@ object Refresh {
         return Triple(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
     }
 
+    private fun dayNum(iso: String): Long? = Utc.parse(iso.take(10) + "T00:00:00Z")?.let { it / 86400 }
+
+    private fun hasMatch(rows: List<Match>, home: String, away: String, day: String): Boolean {
+        val d = dayNum(day) ?: return false
+        return rows.any { it.home == home && it.away == away && (dayNum(it.date)?.let { x -> Math.abs(x - d) <= 1 } ?: false) }
+    }
+
+    /**
+     * football-data.co.uk is often a day or two behind. Fill the gap with finished scores from ESPN (full time only,
+     * no xG, shots or cards), same as the PC app. When the site catches up, its fuller rows replace these.
+     * Never allowed to break a refresh.
+     */
+    private fun quickResults(lk: String, rows: List<Match>, season: String, dl: Downloads, now: Long): List<Match> {
+        try {
+            val today = Utc.day(now)
+            val last = rows.maxOfOrNull { it.date }
+            val floor = Utc.day(now - 14 * 86400L)
+            val start = if (last != null && last > floor) last else floor
+            val tn = TeamNames(teamsOf(rows))
+            val added = ArrayList<Match>()
+            var dn = dayNum(start) ?: return emptyList()
+            val endN = dayNum(today) ?: return emptyList()
+            while (dn <= endN) {
+                val d = Utc.day(dn * 86400L)
+                val board = try { dl.scoreboard(lk, d.replace("-", "")) } catch (e: Sources.NetFail) { emptyList() }
+                for (ev in board) {
+                    val hg = ev.hg; val ag = ev.ag
+                    if (!ev.completed || hg == null || ag == null) continue
+                    val h = tn.canon(ev.home) ?: continue
+                    val a = tn.canon(ev.away) ?: continue
+                    val day = if (ev.utc.length >= 10) ev.utc.substring(0, 10) else d
+                    if (hasMatch(rows, h, a, day) || hasMatch(added, h, a, day)) continue
+                    val time = if (ev.utc.length >= 16) ev.utc.substring(11, 16) else ""
+                    added.add(Match(day, time, h, a, hg, ag, "", null, null, null, null, null, null, null, null, null, null, null, null, season))
+                }
+                dn++
+            }
+            return added
+        } catch (e: Throwable) { return emptyList() }
+    }
+
     /** Runs a full refresh. Returns warnings (plain sentences). */
     fun refresh(state: FootState, token: String, progress: (String, Double) -> Unit = { _, _ -> },
                 dl: Downloads = Downloads(), now: Long = System.currentTimeMillis() / 1000, todayYmd: Triple<Int, Int, Int> = today()): List<String> {
@@ -118,6 +159,10 @@ object Refresh {
             var gotCurrent = false
             try { state.results[lk] = dl.results(lk, season); gotCurrent = true }
             catch (e: Sources.NetFail) { warnings.add("Results for ${Leagues.ALL.getValue(lk).name}: ${e.message}") }
+            // the results site is often a day or two behind, so add finished scores from ESPN (same as the PC app)
+            val cur = state.results[lk] ?: emptyList()
+            val quick = quickResults(lk, cur, season, dl, now)
+            if (quick.isNotEmpty()) state.results[lk] = cur + quick
             if (!state.prev.containsKey(lk) || (gotCurrent && prevDone[lk] != prevSeason)) {
                 try { state.prev[lk] = dl.results(lk, prevSeason); prevDone[lk] = prevSeason } catch (e: Sources.NetFail) { }
             }

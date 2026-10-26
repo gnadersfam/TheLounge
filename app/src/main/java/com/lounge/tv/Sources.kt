@@ -10,7 +10,8 @@ object Sources {
 
     class Lookahead(val div: String, val date: String, val time: String, val home: String, val away: String,
                     val ref: String, val odds: DoubleArray?, val o25: DoubleArray?)
-    class Scoreboard(val id: String, val utc: String, val home: String, val away: String, val completed: Boolean)
+    class Scoreboard(val id: String, val utc: String, val home: String, val away: String, val completed: Boolean,
+                     val hg: Int? = null, val ag: Int? = null)
 
     private fun dbl(v: String?): Double? = v?.trim()?.toDoubleOrNull()
     private fun int(v: String?): Int? = v?.trim()?.toIntOrNull()
@@ -81,10 +82,14 @@ object Sources {
             val ev = e.obj()
             val comp = ev["competitions"].arr().firstOrNull().obj()
             val sides = HashMap<String, String>()
-            for (c in comp["competitors"].arr()) sides[c.obj()["homeAway"].str()] = c.obj()["team"].obj()["displayName"].str()
+            val goals = HashMap<String, Int?>()
+            for (c in comp["competitors"].arr()) {
+                sides[c.obj()["homeAway"].str()] = c.obj()["team"].obj()["displayName"].str()
+                goals[c.obj()["homeAway"].str()] = c.obj()["score"]?.toString()?.trim()?.toDoubleOrNull()?.toInt()
+            }
             if (!sides.containsKey("home") || !sides.containsKey("away")) continue
             val completed = ev["status"].obj()["type"].obj()["completed"].bool()
-            out.add(Scoreboard(ev["id"].str(), ev["date"].str(), sides.getValue("home"), sides.getValue("away"), completed))
+            out.add(Scoreboard(ev["id"].str(), ev["date"].str(), sides.getValue("home"), sides.getValue("away"), completed, goals["home"], goals["away"]))
         }
         return out
     }
