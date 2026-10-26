@@ -29,7 +29,8 @@ class MainActivity : Activity() {
         RailItem("football", R.drawable.ic_football, "Football", "PLAY"),
         RailItem("twitch", R.drawable.ic_twitch, "Twitch"),
         RailItem("music", R.drawable.ic_music, "Music"),
-        RailItem("settings", R.drawable.ic_settings, "Settings", "SYSTEM")
+        RailItem("perf", R.drawable.ic_perf, "Performance", "SYSTEM"),
+        RailItem("settings", R.drawable.ic_settings, "Settings")
     )
 
     private lateinit var content: FrameLayout
@@ -164,6 +165,7 @@ class MainActivity : Activity() {
         "football" -> FootballScreen(this)
         "twitch" -> TwitchScreen(this)
         "music" -> MusicScreen(this)
+        "perf" -> PerfScreen(this)
         "settings" -> SettingsScreen(this)
         else -> PairScreen(this)
     }
