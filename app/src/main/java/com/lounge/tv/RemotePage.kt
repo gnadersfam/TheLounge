@@ -49,9 +49,6 @@ input[type=range]{width:100%;margin:10px 0 0;accent-color:#19F0FF;height:28px;ba
 .vol .btn{flex:0 0 auto;width:56px;height:52px;font-size:24px}
 .vol .mute{width:64px;font-size:15px;border-color:#FF5C7A;color:#FF5C7A}
 .vol .mute.on{background:#FF5C7A;color:#07030F}
-.btn.on{background:#19F0FF;color:#07030F;border:0}
-.tpad{height:240px;border-radius:22px;background:#0E0820;border:2px solid #19F0FF;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 24px;touch-action:none;font-size:18px;font-weight:700;gap:8px}
-.tpad .sub{font-weight:400}
 .bar{height:8px;border-radius:4px;background:rgba(255,255,255,.18)}
 .bar i{display:block;height:8px;border-radius:4px;background:#19F0FF;width:0}
 .vm{flex:1}
@@ -100,12 +97,6 @@ input[type=range]{width:100%;margin:10px 0 0;accent-color:#19F0FF;height:28px;ba
     <div class="times"><span id="tp">0:00</span><span id="th">Drag to skip</span><span id="td">0:00</span></div>
   </div>
 
-  <div class="row">
-    <button class="btn on" id="mArrows">Arrows</button>
-    <button class="btn" id="mMouse">Mouse</button>
-  </div>
-
-  <div id="padWrap">
   <div class="pad">
     <div></div>
     <button data-k="up" data-r="1" aria-label="Up"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
@@ -116,31 +107,6 @@ input[type=range]{width:100%;margin:10px 0 0;accent-color:#19F0FF;height:28px;ba
     <div></div>
     <button data-k="down" data-r="1" aria-label="Down"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
     <div></div>
-  </div>
-  </div>
-
-  <div id="mouseWrap" style="display:none;flex-direction:column;gap:12px">
-    <div id="tpad" class="tpad">Touch pad<span class="sub">Drag to move the pointer. Tap to click. Two fingers to scroll.</span></div>
-    <div class="row">
-      <button class="btn" data-d="click">Left click</button>
-      <button class="btn" data-d="rclick">Right click</button>
-    </div>
-    <div class="srch">
-      <input id="dq" type="text" placeholder="Type into Discord" autocomplete="off" autocapitalize="none">
-      <button class="go" id="dsend">Send</button>
-    </div>
-    <div class="row">
-      <button class="btn" data-d="bksp">Backspace</button>
-      <button class="btn" data-d="enter">Enter</button>
-    </div>
-    <div class="row">
-      <button class="btn" data-d="open">Open Discord</button>
-      <button class="btn" data-d="qr">Show QR login</button>
-    </div>
-    <div class="row">
-      <button class="btn" data-d="full">Full screen</button>
-      <button class="btn" data-d="hide">Hide Discord</button>
-    </div>
   </div>
 
   <div class="row">
@@ -326,63 +292,6 @@ byId('go').addEventListener('click',function(){runSearch(byId('q').value);});
 byId('q').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();runSearch(byId('q').value);}});
 byId('q2').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();runSearch(byId('q2').value);}});
 byId('back').addEventListener('click',function(){show(false);});
-
-// ---- Mouse mode (moves the pointer in the Discord window on the TV)
-var GAIN=2.8;
-function setMode(m){
-  byId('padWrap').style.display=m==='arrows'?'block':'none';
-  byId('mouseWrap').style.display=m==='mouse'?'flex':'none';
-  byId('mArrows').className=m==='arrows'?'btn on':'btn';
-  byId('mMouse').className=m==='mouse'?'btn on':'btn';
-  if(m==='arrows')api('/dopen',{a:'release'});
-}
-byId('mArrows').addEventListener('click',function(){buzz();setMode('arrows');});
-byId('mMouse').addEventListener('click',function(){buzz();setMode('mouse');});
-bind('[data-d]','data-d',function(a){
-  if(a==='click'){api('/dc',{b:'l'},dmsg);}
-  else if(a==='rclick'){api('/dc',{b:'r'},dmsg);}
-  else{api('/dopen',{a:a},dmsg);}
-});
-function dmsg(r){if(r&&r.ok===false&&r.msg)toast(r.msg);}
-function sendTyped(){var v=byId('dq').value;if(!v)return;api('/dt',{t:v},dmsg);byId('dq').value='';}
-byId('dsend').addEventListener('click',sendTyped);
-byId('dq').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sendTyped();}});
-var tpad=byId('tpad'),act={},nAct=0,tapStart=0,tapMoved=0,dxAcc=0,dyAcc=0,sendT=null,scrollAcc=0,scrollT=null;
-function flushMove(){
-  sendT=null;
-  var a=Math.round(dxAcc),b=Math.round(dyAcc);
-  if(!a&&!b)return;
-  dxAcc-=a;dyAcc-=b;
-  api('/dm',{dx:a,dy:b},dmsg);
-}
-tpad.addEventListener('pointerdown',function(e){
-  e.preventDefault();
-  try{tpad.setPointerCapture(e.pointerId);}catch(x){}
-  act[e.pointerId]={x:e.clientX,y:e.clientY};
-  nAct=Object.keys(act).length;
-  if(nAct===1){tapStart=Date.now();tapMoved=0;}
-});
-tpad.addEventListener('pointermove',function(e){
-  var p=act[e.pointerId];if(!p)return;
-  var dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
-  if(nAct>=2){
-    tapMoved+=Math.abs(dy)+Math.abs(dx);
-    scrollAcc+=dy;
-    if(!scrollT){scrollT=setTimeout(function(){scrollT=null;var v=Math.round(scrollAcc);scrollAcc=0;if(v)api('/ds',{d:v},dmsg);},80);}
-  }else{
-    tapMoved+=Math.abs(dx)+Math.abs(dy);
-    dxAcc+=dx*GAIN;dyAcc+=dy*GAIN;
-    if(!sendT)sendT=setTimeout(flushMove,40);
-  }
-});
-function endPointer(e){
-  if(!act[e.pointerId])return;
-  delete act[e.pointerId];
-  var was=nAct;nAct=Object.keys(act).length;
-  if(was===1&&tapMoved<8&&Date.now()-tapStart<350){buzz();api('/dc',{b:'l'},dmsg);}
-}
-tpad.addEventListener('pointerup',endPointer);
-tpad.addEventListener('pointercancel',function(e){delete act[e.pointerId];nAct=Object.keys(act).length;});
 
 var awake=true,lock=null,vid=byId('nosleep');
 vid.src='data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMsbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAlZ0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAEAAAABAAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAHObWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABeW1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAATlzdGJsAAAAuXN0c2QAAAAAAAAAAQAAAKlhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAEAAQABIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAAL2F2Y0MBQsAK/+EAF2dCwArZBCbARAAAAwAEAAADABA8SJkgAQAFaMuDyyAAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAAAUyAAAFMgAAAAYc3R0cwAAAAAAAAABAAAAAgAAIAAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAAAgAAAAEAAAAcc3RzegAAAAAAAAAAAAAAAgAAAo8AAAAKAAAAFHN0Y28AAAAAAAAAAQAAA1wAAABidWR0YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0YQAAAAEAAAAATGF2ZjYwLjE2LjEwMAAAAAhmcmVlAAACoW1kYXQAAAJwBgX//2zcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgxOjB4MTExIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MiBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj0yIHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAF2WIhAU8mKAAP78nJyddddddddddddeAAAAABkGaOAl4Rg==';
