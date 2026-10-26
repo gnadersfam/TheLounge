@@ -22,6 +22,7 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
 
     private companion object {
         const val GENRES = "?genres"
+        const val FORYOU = "?foryou"
         const val RECENT = "?recent"
         const val WATCHED = "?watched"
         const val ALL = "*"
@@ -58,6 +59,8 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
     private var loading = false
     private var built = 0L
     private var shownItems: List<PosterRow> = emptyList()
+    private var forYou: List<VodItem> = emptyList()
+    private var forYouLearned = false
 
     /** A card in the grid: either a title from the list, or a "continue watching" entry. */
     private class PosterRow(val item: VodItem?, val hist: Hist?, val title: String, val icon: String, val next: Boolean = false)
@@ -124,7 +127,7 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
     }
 
     private fun markChips() {
-        for ((k, v) in chipViews) v.isSelected = k == genreKey || (k == GENRES && genreKey.startsWith("g:"))
+        for ((k, v) in chipViews) v.isSelected = k == genreKey || (k == GENRES && (genreKey.startsWith("g:") || genreKey == FORYOU))
         chipViews[SEARCH]?.text = if (query.isEmpty()) "Search" else "Search: $query"
         chipViews[SORT]?.text = "Sort: " + SORTS[sortIdx]
     }
@@ -344,8 +347,10 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
         val byGenre = HashMap<String, MutableList<VodItem>>()
         for (it in items) byGenre.getOrPut(Vod.genreOf(it.cat)) { ArrayList() }.add(it)
         val pinned = pins()
-        val order = byGenre.keys.sortedWith(compareBy<String>({ if (it in pinned) pinned.indexOf(it) else 1000 }, { -(byGenre[it]?.size ?: 0) }, { it.lowercase() }))
-        if (order.isEmpty()) return
+        val genreOrder = byGenre.keys.sortedWith(compareBy<String>({ if (it in pinned) pinned.indexOf(it) else 1000 }, { -(byGenre[it]?.size ?: 0) }, { it.lowercase() }))
+        if (genreOrder.isEmpty()) return
+        buildForYou()
+        val order = listOf(FORYOU) + genreOrder
         genreBox.addView(Skin.text(act, "Hold OK on a genre to pin it to the front.", 14f, Skin.DIM), Skin.gapParams(act, bottomDp = 8))
         var i = 0
         var rowNo = 0
@@ -356,6 +361,12 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
             for (j in 0 until per) {
                 if (i >= order.size) break
                 val g = order[i++]
+                if (g == FORYOU) {
+                    val ft = forYouTile()
+                    tiles[g] = ft
+                    line.addView(ft, LinearLayout.LayoutParams(0, Skin.dp(act, h), 1f).apply { rightMargin = Skin.dp(act, 10) })
+                    continue
+                }
                 val list = byGenre[g] ?: continue
                 val top = list.filter { it.icon.startsWith("http") }.sortedByDescending { it.rating }.take(3)
                 val t = genreTile(g, list.size, top, g in pinned)
@@ -365,6 +376,102 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
             genreBox.addView(line, Skin.gapParams(act, bottomDp = 10))
             rowNo++
         }
+    }
+
+    /**
+     * "For You": titles you have not watched, picked from the kinds you watch most (newest watching counts most),
+     * with better rated and newer ones first and no single genre taking over. With no history yet it simply
+     * shows the best rated titles.
+     */
+    private fun buildForYou() {
+        val byId = HashMap<String, VodItem>()
+        for (x in items) byId[x.id] = x
+        val seen = HashSet<String>()
+        val weight = HashMap<String, Double>()
+        var n = 0
+        for (h in History.all(act)) {
+            val id = if (series) (if (h.kind == "episode") h.seriesId else "") else (if (h.kind == "movie") h.id else "")
+            if (id.isEmpty() || !seen.add(id)) continue
+            val item = byId[id] ?: continue
+            val g = Vod.genreOf(item.cat)
+            weight[g] = (weight[g] ?: 0.0) + 1.0 / (1.0 + n * 0.08)
+            n++
+        }
+        val learned = weight.isNotEmpty()
+        val top = weight.values.maxOrNull() ?: 1.0
+        val cand = ArrayList<Pair<Double, VodItem>>()
+        for (x in items) {
+            if (x.id in seen || !x.icon.startsWith("http")) continue
+            val gw = if (learned) (weight[Vod.genreOf(x.cat)] ?: 0.0) / top else 0.0
+            if (learned && gw <= 0.0) continue
+            val r = x.rating.coerceIn(0.0, 10.0) / 10.0
+            val fresh = if (x.year > 0) (x.year - 1980).coerceIn(0, 50) / 50.0 else 0.3
+            cand.add(Pair(gw * 2.0 + r * 1.2 + fresh * 0.6, x))
+        }
+        cand.sortByDescending { it.first }
+        val perGenre = HashMap<String, Int>()
+        val out = ArrayList<VodItem>()
+        for (pair in cand) {
+            val g = Vod.genreOf(pair.second.cat)
+            val used = perGenre[g] ?: 0
+            if (learned && used >= 12) continue
+            perGenre[g] = used + 1
+            out.add(pair.second)
+            if (out.size >= 48) break
+        }
+        forYou = out
+        forYouLearned = learned
+    }
+
+    /** The first tile on the genre screen: its own purple-to-pink look, with posters from the suggestions. */
+    private fun forYouTile(): FrameLayout {
+        val c = act
+        val count = forYou.size
+        val t = FrameLayout(c).apply {
+            background = Skin.card(c, 14)
+            isFocusable = true
+            isClickable = true
+            setPadding(Skin.dp(c, 4), Skin.dp(c, 4), Skin.dp(c, 4), Skin.dp(c, 4))
+            setOnClickListener {
+                genreKey = FORYOU
+                markChips()
+                rebuildGrid()
+                focusFirst()
+            }
+            setOnFocusChangeListener { _, f ->
+                if (f) {
+                    dTitle.text = "For You"
+                    dMeta.text = "$count picks"
+                    dPlot.text = if (forYouLearned) "Picked from the kinds of ${if (series) "shows" else "films"} you watch" else "Watch a few and these will get smarter"
+                }
+            }
+        }
+        val bg = View(c).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xFF2A1B5E.toInt(), 0xFF7B2FBF.toInt(), Skin.MAGENTA))
+        }
+        t.addView(bg, FrameLayout.LayoutParams(-1, -1))
+        val strip = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL }
+        for (p in forYou.take(3)) {
+            val iv = ImageView(c).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            strip.addView(iv, LinearLayout.LayoutParams(Skin.dp(c, 62), -1).apply { leftMargin = Skin.dp(c, 6) })
+            Img.load(iv, p.icon, 170, 250)
+        }
+        t.addView(strip, FrameLayout.LayoutParams(-2, -1, Gravity.END).apply {
+            topMargin = Skin.dp(c, 10); bottomMargin = Skin.dp(c, 10); rightMargin = Skin.dp(c, 10)
+        })
+        val shade = View(c).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xB007030F.toInt(), 0x00000000))
+        }
+        t.addView(shade, FrameLayout.LayoutParams(-1, -1))
+        t.addView(Skin.text(c, "★ Picked for you", 13f, Color.WHITE, true).apply {
+            setBackgroundColor(0x44FFFFFF)
+            setPadding(Skin.dp(c, 8), Skin.dp(c, 2), Skin.dp(c, 8), Skin.dp(c, 2))
+        }, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = Skin.dp(c, 8); leftMargin = Skin.dp(c, 10) })
+        val txt = LinearLayout(c).apply { orientation = LinearLayout.VERTICAL; setPadding(Skin.dp(c, 12), 0, Skin.dp(c, 10), Skin.dp(c, 8)) }
+        txt.addView(Skin.oneLine(Skin.text(c, "FOR YOU", 24f, Color.WHITE, true)))
+        txt.addView(Skin.oneLine(Skin.text(c, "Smart suggestions  -  %,d titles".format(count), 14f, 0xFFF0E6FF.toInt())))
+        t.addView(txt, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        return t
     }
 
     private fun genreTile(g: String, count: Int, top: List<VodItem>, pinned: Boolean): FrameLayout {
@@ -420,6 +527,9 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
             shownItems = recentRows()
         } else if (genreKey == WATCHED) {
             shownItems = watchedRows()
+        } else if (genreKey == FORYOU) {
+            buildForYou()
+            shownItems = forYou.map { PosterRow(it, null, Vod.displayName(it.name), it.icon) }
         } else {
             var l = items.asSequence()
             if (genreKey.startsWith("g:")) {
@@ -442,6 +552,7 @@ class VodScreen(act: MainActivity, private val series: Boolean) : Screen(act), M
             dTitle.text = when (genreKey) {
                 RECENT -> "Nothing to continue yet"
                 WATCHED -> "Nothing watched yet"
+                FORYOU -> "No suggestions yet"
                 else -> if (items.isEmpty()) "" else "No matches"
             }
         }

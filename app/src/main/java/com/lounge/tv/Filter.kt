@@ -164,6 +164,31 @@ object Filter {
         return drop
     }
 
+    private val BACKUP_RE = Regex("""\b(?:backup|back\s*up|alt|alternate|alternative|bkp)\b""", IC)
+
+    private fun copyBase(name: String): String =
+        NON_ALNUM_RE.replace(BACKUP_RE.replace(baseName(name), " "), " ").trim()
+
+    /**
+     * Other copies of the same channel (HD, 4K, SD, backup...) from the full list, best first.
+     * The player tries them one by one when the channel you chose will not play.
+     */
+    fun copiesOf(all: List<Chan>, ch: Chan): List<Chan> {
+        val base = copyBase(ch.name)
+        if (base.length < 3) return emptyList()
+        val regionNow = REGION_RE.containsMatchIn(ch.name)
+        return all.filter {
+            it.id != ch.id && it.tag == ch.tag && copyBase(it.name) == base &&
+                (regionNow || !REGION_RE.containsMatchIn(it.name))
+        }.sortedWith(
+            compareBy<Chan>(
+                { if (BACKUP_RE.containsMatchIn(it.name)) 1 else 0 },
+                { -quality(it.name) },
+                { it.name.length }
+            )
+        )
+    }
+
     /** Hide junk and regional copies, then sort: UK first, then everyday categories, then A-Z. */
     fun tidy(rows: List<Chan>): List<Chan> {
         val drop = dropIds(rows)

@@ -3,6 +3,7 @@ package com.lounge.tv
 import android.app.Activity
 import android.content.Context
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -67,6 +68,20 @@ class PlayerActivity : Activity() {
     private var waitSecs = 0
     private var pendingSeek = 0L
     private lateinit var slowMsg: TextView
+
+    // another copy of the channel (HD / 4K / backup) that is playing because the chosen one would not
+    private var altChan: Chan? = null
+    private val copiesTried = HashSet<String>()
+    private var allChans: List<Chan> = emptyList()
+
+    // sound level helper (evens out loud adverts and quiet speech)
+    private lateinit var soundBadge: TextView
+    private var soundFx: Any? = null
+    private var soundSession = 0
+    private var soundBadgeShown = false
+    private val hideSoundBadge = Runnable {
+        soundBadge.animate().alpha(0f).setDuration(500).withEndAction { soundBadge.visibility = View.GONE }.start()
+    }
 
     private val hidePanel = Runnable { panel.visibility = View.GONE; matchBox.visibility = View.GONE }
     private val hideToast = Runnable { toast.visibility = View.GONE }
@@ -147,6 +162,15 @@ class PlayerActivity : Activity() {
         }
         root.addView(toast, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = Skin.dp(this@PlayerActivity, 40) })
 
+        soundBadge = Skin.text(this, "Sound helper: ON", 17f, Skin.TEXT, true).apply {
+            background = Skin.card(this@PlayerActivity, 14, 0xE607030F.toInt(), Skin.GREEN)
+            setPadding(Skin.dp(this@PlayerActivity, 16), Skin.dp(this@PlayerActivity, 8), Skin.dp(this@PlayerActivity, 16), Skin.dp(this@PlayerActivity, 8))
+            visibility = View.GONE
+        }
+        root.addView(soundBadge, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
+            topMargin = Skin.dp(this@PlayerActivity, 30); leftMargin = Skin.dp(this@PlayerActivity, 36)
+        })
+
         matchBox = Skin.text(this, "", 15f, Skin.TEXT).apply {
             background = Skin.card(this@PlayerActivity, 14, 0xE607030F.toInt(), Skin.LINE)
             setPadding(Skin.dp(this@PlayerActivity, 16), Skin.dp(this@PlayerActivity, 12), Skin.dp(this@PlayerActivity, 16), Skin.dp(this@PlayerActivity, 12))
@@ -203,6 +227,10 @@ class PlayerActivity : Activity() {
                         lastPos = t
                     }
                     if (live && ext != Store.ext(this@PlayerActivity)) Store.setExt(this@PlayerActivity, ext)
+                    if (soundOn() && soundSupported() && (player?.audioSessionId ?: 0) != soundSession) {
+                        applySound()
+                        if (soundFx != null && !soundBadgeShown) showSoundBadge(true)
+                    }
                 }
                 if (state == Player.STATE_ENDED && !live) {
                     markFinished()
@@ -217,6 +245,12 @@ class PlayerActivity : Activity() {
         player = p
         Remote.player = this
         handler.postDelayed(tick, 1000)
+        if (live) {
+            Bg.run {
+                val l = Store.loadChannels(this@PlayerActivity)?.second ?: emptyList()
+                Bg.ui { allChans = l }
+            }
+        }
         if (live) startChannel(true) else startVod()
     }
 
@@ -225,6 +259,7 @@ class PlayerActivity : Activity() {
         if (Remote.player === this) Remote.player = null
         tw?.close()
         tw = null
+        releaseSound()
         saveProgress()
         handler.removeCallbacksAndMessages(null)
         player?.release()
@@ -232,7 +267,7 @@ class PlayerActivity : Activity() {
     }
 
     // ------------------------------------------------------------------ live
-    private fun current(): Chan? = Session.channels.getOrNull(Session.index)
+    private fun current(): Chan? = altChan ?: Session.channels.getOrNull(Session.index)
 
     private fun startChannel(resetRetries: Boolean) {
         val ch = current()
@@ -243,7 +278,8 @@ class PlayerActivity : Activity() {
             return
         }
         Session.xt = xt
-        if (Session.curChanId != ch.id) {
+        val onCopy = altChan != null
+        if (!onCopy && Session.curChanId != ch.id) {
             Session.prevChanId = Session.curChanId
             Session.curChanId = ch.id
         }
@@ -255,8 +291,10 @@ class PlayerActivity : Activity() {
         p.setMediaItem(MediaItem.fromUri(xt.streamUrl(ch.id, ext)))
         p.prepare()
         p.playWhenReady = true
-        Store.putStr(this, "last_chan", ch.id)
-        History.save(this, Hist("live:" + ch.id, "live", ch.name, ch.cat, ch.id, ext, 0, 0, System.currentTimeMillis() / 1000))
+        if (!onCopy) {
+            Store.putStr(this, "last_chan", ch.id)
+            History.save(this, Hist("live:" + ch.id, "live", ch.name, ch.cat, ch.id, ext, 0, 0, System.currentTimeMillis() / 1000))
+        }
     }
 
     private fun showLiveInfo(ch: Chan) {
@@ -268,7 +306,7 @@ class PlayerActivity : Activity() {
         line1.text = ch.name
         line1Right.text = ch.cat
         val num = Session.index + 1
-        line1.text = "$num   ${ch.name}"
+        line1.text = if (altChan != null) "Other copy   ${ch.name}" else "$num   ${ch.name}"
         line2.text = ""
         line3.text = ""
         bar.pct = 0
@@ -365,13 +403,20 @@ class PlayerActivity : Activity() {
         val i = Session.channels.indexOfFirst { it.id == id }
         if (i < 0) { flash("The last channel isn't in this list"); return }
         Session.index = i
+        forgetCopies()
         handler.removeCallbacks(hidePanel)
         startChannel(true)
+    }
+
+    private fun forgetCopies() {
+        altChan = null
+        copiesTried.clear()
     }
 
     private fun change(delta: Int) {
         val n = Session.channels.size
         if (n == 0) return
+        forgetCopies()
         Session.index = (Session.index + delta + n) % n
         handler.removeCallbacks(hidePanel)
         startChannel(true)
@@ -473,6 +518,7 @@ class PlayerActivity : Activity() {
             startChannel(false)
             return
         }
+        if (live && tryOtherCopy()) return
         if (retries < retryDelays.size) {
             val wait = retryDelays[retries]
             retries++
@@ -495,6 +541,97 @@ class PlayerActivity : Activity() {
         line2.text = if (live) "This channel won't play right now. Press Up / Down for another channel, or Back."
         else "This title won't play right now. Press Back and try again later."
         handler.removeCallbacks(hidePanel)
+    }
+
+    /**
+     * The channel you chose would not play (even after the other stream type and one reconnect). Look for other
+     * copies of it (HD, 4K, SD, backup) and try them one at a time, best first. If none of them work, go back
+     * to your channel and keep reconnecting as before.
+     */
+    private fun tryOtherCopy(): Boolean {
+        if (retries < 1) return false
+        val chosen = Session.channels.getOrNull(Session.index) ?: return false
+        copiesTried.add(chosen.id)
+        val next = Filter.copiesOf(allChans, chosen).firstOrNull { it.id !in copiesTried }
+        if (next != null) {
+            copiesTried.add(next.id)
+            altChan = next
+            flash("Trying another copy: " + next.name)
+            startChannel(true)
+            return true
+        }
+        if (altChan != null) {
+            // every copy failed: back to the chosen channel for the normal reconnect attempts
+            altChan = null
+            retries = 0
+            triedAlt = true
+            flash("No other copy worked. Back to your channel")
+            startChannel(false)
+            return true
+        }
+        return false
+    }
+
+    // ------------------------------------------------------------------ sound level helper
+    private fun soundOn() = Store.bool(this, "sound_helper", false)
+
+    private fun soundSupported() = Build.VERSION.SDK_INT >= 28
+
+    private fun releaseSound() {
+        try {
+            if (Build.VERSION.SDK_INT >= 28) (soundFx as? android.media.audiofx.DynamicsProcessing)?.release()
+        } catch (e: Throwable) {
+            // already gone
+        }
+        soundFx = null
+        soundSession = 0
+    }
+
+    /** Squash loud parts and lift quiet ones a little, on the player's own sound only. */
+    @android.annotation.SuppressLint("NewApi")
+    private fun applySound() {
+        releaseSound()
+        if (!soundOn() || !soundSupported()) return
+        val p = player ?: return
+        val sid = p.audioSessionId
+        if (sid == C.AUDIO_SESSION_ID_UNSET) return
+        try {
+            val cfg = android.media.audiofx.DynamicsProcessing.Config.Builder(
+                android.media.audiofx.DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2,
+                false, 0, false, 0, false, 0, true
+            ).build()
+            cfg.setLimiterAllChannelsTo(android.media.audiofx.DynamicsProcessing.Limiter(true, true, 0, 10f, 250f, 4f, -24f, 8f))
+            val dp = android.media.audiofx.DynamicsProcessing(0, sid, cfg)
+            dp.setEnabled(true)
+            soundFx = dp
+            soundSession = sid
+        } catch (e: Throwable) {
+            soundFx = null
+            Crash.log("Sound helper", e)
+        }
+    }
+
+    private fun showSoundBadge(on: Boolean) {
+        soundBadgeShown = true
+        soundBadge.text = if (on) "Sound helper: ON" else "Sound helper: OFF"
+        soundBadge.animate().cancel()
+        soundBadge.alpha = 1f
+        soundBadge.visibility = View.VISIBLE
+        soundBadge.bringToFront()
+        handler.removeCallbacks(hideSoundBadge)
+        handler.postDelayed(hideSoundBadge, 5000)
+    }
+
+    private fun toggleSound() {
+        val on = !soundOn()
+        Store.putBool(this, "sound_helper", on)
+        closeMenu()
+        if (on && !soundSupported()) {
+            flash("The sound helper isn't supported on this Fire TV")
+            return
+        }
+        applySound()
+        if (on && soundFx == null) flash("The sound helper couldn't start on this Fire TV") else showSoundBadge(on)
     }
 
     // ------------------------------------------------------------------ audio and subtitle menu
@@ -522,6 +659,7 @@ class PlayerActivity : Activity() {
         val items = ArrayList<Pair<String, () -> Unit>>()
         items.add(Pair("Audio") { trackMenu(C.TRACK_TYPE_AUDIO, "Audio") })
         items.add(Pair("Subtitles") { trackMenu(C.TRACK_TYPE_TEXT, "Subtitles") })
+        items.add(Pair("Sound level helper: " + (if (soundOn()) "On" else "Off") + "   (press to change)") { toggleSound() })
         items.add(Pair("Twitch window") { twitchMenu() })
         items.add(Pair("Move this menu") { startMove(2) })
         if (live) items.add(Pair("Restart this channel") { closeMenu(); startChannel(true) })

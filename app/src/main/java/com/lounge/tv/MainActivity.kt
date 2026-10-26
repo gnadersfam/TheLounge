@@ -26,6 +26,7 @@ class MainActivity : Activity() {
         RailItem("live", R.drawable.ic_tv, "Live TV"),
         RailItem("movies", R.drawable.ic_movies, "Movies"),
         RailItem("shows", R.drawable.ic_shows, "Shows"),
+        RailItem("apps", R.drawable.ic_apps, "Apps"),
         RailItem("football", R.drawable.ic_football, "Football", "PLAY"),
         RailItem("twitch", R.drawable.ic_twitch, "Twitch"),
         RailItem("music", R.drawable.ic_music, "Music"),
@@ -147,7 +148,7 @@ class MainActivity : Activity() {
             row.addView(Skin.text(this, it.label, 20f, Skin.MUTED, true).apply { setPadding(Skin.dp(this@MainActivity, 14), 0, 0, 0) },
                 LinearLayout.LayoutParams(0, -2, 1f))
             railViews[it.name] = row
-            col.addView(row, LinearLayout.LayoutParams(-1, Skin.dp(this, 48)).apply {
+            col.addView(row, LinearLayout.LayoutParams(-1, Skin.dp(this, 44)).apply {
                 leftMargin = Skin.dp(this@MainActivity, 10); rightMargin = Skin.dp(this@MainActivity, 10); topMargin = Skin.dp(this@MainActivity, 2)
             })
         }
@@ -166,6 +167,8 @@ class MainActivity : Activity() {
         "twitch" -> TwitchScreen(this)
         "music" -> MusicScreen(this)
         "perf" -> PerfScreen(this)
+        "apps" -> AppsScreen(this)
+        "bluetooth" -> BluetoothScreen(this)
         "settings" -> SettingsScreen(this)
         else -> PairScreen(this)
     }
@@ -188,10 +191,12 @@ class MainActivity : Activity() {
             Img.clear()
             System.gc()
             s.visibility = View.VISIBLE
+            // the Bluetooth page belongs to the Apps tab, so the Apps item stays lit while it is open
+            val lit = if (name == "bluetooth") "apps" else name
             for ((n, v) in railViews) {
-                v.isSelected = n == name
-                (v.getChildAt(0) as ImageView).setColorFilter(if (n == name) Skin.CYAN else Skin.MUTED)
-                (v.getChildAt(1) as TextView).setTextColor(if (n == name) Skin.TEXT else Skin.MUTED)
+                v.isSelected = n == lit
+                (v.getChildAt(0) as ImageView).setColorFilter(if (n == lit) Skin.CYAN else Skin.MUTED)
+                (v.getChildAt(1) as TextView).setTextColor(if (n == lit) Skin.TEXT else Skin.MUTED)
             }
             s.onShow()
         }
@@ -261,6 +266,11 @@ class MainActivity : Activity() {
     /** Called after the phone page saved something. */
     fun onKeysChanged() {
         for (s in screens.values) s.onKeysChanged()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        (screens["bluetooth"] as? BluetoothScreen)?.let { if (it.visibility == View.VISIBLE) it.onShow() }
     }
 
     override fun onTrimMemory(level: Int) {
