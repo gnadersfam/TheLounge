@@ -189,6 +189,11 @@ object Remote {
                     "/play" -> out = play(body["t"].orEmpty(), body["id"].orEmpty())
                     "/scores" -> out = scores()
                     "/watch" -> out = watch(body["home"].orEmpty(), body["away"].orEmpty())
+                    "/dm" -> out = discord("move", body)
+                    "/dc" -> out = discord("click", body)
+                    "/ds" -> out = discord("scroll", body)
+                    "/dt" -> out = discord("type", body)
+                    "/dopen" -> out = discord("action", body)
                     else -> {
                         status = "404 Not Found"
                         out = reply(false, "Not found")
@@ -406,6 +411,40 @@ object Remote {
             }
         }
         return reply(false, "Not sure what to play")
+    }
+
+    // ------------------------------------------------------------------ Discord window (the phone's Mouse mode)
+    private fun discord(kind: String, b: Map<String, String>): String {
+        val p = player ?: return reply(false, "Start a channel or film on the TV first, then open Discord")
+        when (kind) {
+            "move" -> {
+                val dx = b["dx"]?.toIntOrNull() ?: 0
+                val dy = b["dy"]?.toIntOrNull() ?: 0
+                val on = onMain(false) { p.remoteDiscordPointer(dx, dy) }
+                return if (on) reply(true, "") else reply(false, "Open Discord first (Open Discord button)")
+            }
+            "click" -> {
+                val right = b["b"] == "r"
+                val on = onMain(false) { p.remoteDiscordClick(right) }
+                return if (on) reply(true, "") else reply(false, "Open Discord first (Open Discord button)")
+            }
+            "scroll" -> {
+                val d = b["d"]?.toIntOrNull() ?: 0
+                val on = onMain(false) { p.remoteDiscordScroll(d) }
+                return if (on) reply(true, "") else reply(false, "Open Discord first (Open Discord button)")
+            }
+            "type" -> {
+                val t = b["t"].orEmpty()
+                val on = onMain(false) { p.remoteDiscordType(t) }
+                return if (on) reply(true, "") else reply(false, "Open Discord first (Open Discord button)")
+            }
+            "action" -> {
+                val a = b["a"].orEmpty()
+                val msg = onMain("Discord did not answer") { p.remoteDiscord(a) }
+                return reply(msg.isEmpty(), msg)
+            }
+        }
+        return reply(false, "Not sure what to do")
     }
 
     // ------------------------------------------------------------------ football scores

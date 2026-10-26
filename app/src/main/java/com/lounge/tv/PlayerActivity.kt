@@ -50,7 +50,8 @@ class PlayerActivity : Activity() {
     private lateinit var matchBox: TextView
     private lateinit var rootView: FrameLayout
     private var tw: TwitchWindow? = null
-    private var moving = 0 // 1 = moving the Twitch window, 2 = moving the menu
+    private var dw: DiscordWindow? = null
+    private var moving = 0 // 1 = moving the Twitch window, 2 = moving the menu, 3 = moving the Discord window
     private var menuDx = 0f // menu position, as a share of the screen width / height away from the middle
     private var menuDy = 0f
 
@@ -225,6 +226,8 @@ class PlayerActivity : Activity() {
         if (Remote.player === this) Remote.player = null
         tw?.close()
         tw = null
+        dw?.close()
+        dw = null
         saveProgress()
         handler.removeCallbacksAndMessages(null)
         player?.release()
@@ -523,6 +526,7 @@ class PlayerActivity : Activity() {
         items.add(Pair("Audio") { trackMenu(C.TRACK_TYPE_AUDIO, "Audio") })
         items.add(Pair("Subtitles") { trackMenu(C.TRACK_TYPE_TEXT, "Subtitles") })
         items.add(Pair("Twitch window") { twitchMenu() })
+        items.add(Pair("Discord window") { discordMenu() })
         items.add(Pair("Move this menu") { startMove(2) })
         if (live) items.add(Pair("Restart this channel") { closeMenu(); startChannel(true) })
         else items.add(Pair("Start over") { closeMenu(); player?.seekTo(0); lastPos = 0; showVodInfo() })
@@ -648,6 +652,102 @@ class PlayerActivity : Activity() {
         toast.bringToFront()
     }
 
+    // ------------------------------------------------------------------ Discord window beside the picture
+    private fun discordMenu() {
+        if (dw?.active != true) openDiscordWindow(DiscordWindow.APP_URL)
+        val w = dw
+        if (w == null || !w.active) {
+            flash("Discord can't open on this device")
+            closeMenu()
+            return
+        }
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items.add(Pair("Size: " + DiscordWindow.SIZES[w.sizeIdx].label + "   (press to change)") { w.setSize((w.sizeIdx + 1) % DiscordWindow.SIZES.size); discordMenu() })
+        items.add(Pair("See-through: " + DiscordWindow.ALPHAS[w.alphaIdx] + "%   (press to change)") { w.setAlphaStep((w.alphaIdx + 1) % DiscordWindow.ALPHAS.size); discordMenu() })
+        items.add(Pair("Move window") { startMove(3) })
+        items.add(Pair(if (w.hearDiscord) "Hear the film again" else "Hear Discord instead") { w.swapSound(); closeMenu() })
+        items.add(Pair("Show QR login (full screen)") { w.load(DiscordWindow.LOGIN_URL); w.setSize(DiscordWindow.FULL_IDX); closeMenu() })
+        items.add(Pair("Hide Discord window") { w.close(); dw = null; closeMenu() })
+        items.add(Pair("Back") { mainMenu() })
+        openMenu("Discord window", items)
+    }
+
+    private fun openDiscordWindow(url: String) {
+        var w = dw
+        if (w == null) {
+            w = DiscordWindow(this, rootView) { v -> player?.volume = v }
+            dw = w
+        }
+        w.open(url)
+        menu.bringToFront() // the menu always sits in front of the Discord picture
+        toast.bringToFront()
+    }
+
+    // ---- used by the phone remote's Mouse mode (always called on the main thread)
+    /** Returns "" when done, or a short message to show on the phone. */
+    fun remoteDiscord(action: String): String {
+        val w = dw
+        when (action) {
+            "open" -> {
+                if (w == null || !w.active) openDiscordWindow(DiscordWindow.APP_URL)
+                return if (dw?.active == true) "" else "Discord can't open on this device"
+            }
+            "qr" -> {
+                openDiscordWindow(DiscordWindow.LOGIN_URL)
+                val n = dw
+                if (n == null || !n.active) return "Discord can't open on this device"
+                n.setSize(DiscordWindow.FULL_IDX)
+                return ""
+            }
+            "full" -> {
+                if (w == null || !w.active) return "Open Discord first"
+                w.setSize(if (w.sizeIdx == DiscordWindow.FULL_IDX) 1 else DiscordWindow.FULL_IDX)
+                return ""
+            }
+            "hide" -> { w?.close(); dw = null; return "" }
+            "release" -> { w?.release(); return "" }
+            "enter" -> {
+                if (w == null || !w.active) return "Open Discord first"
+                w.key(KeyEvent.KEYCODE_ENTER)
+                return ""
+            }
+            "bksp" -> {
+                if (w == null || !w.active) return "Open Discord first"
+                w.key(KeyEvent.KEYCODE_DEL)
+                return ""
+            }
+        }
+        return ""
+    }
+
+    fun remoteDiscordPointer(dx: Int, dy: Int): Boolean {
+        val w = dw
+        if (w == null || !w.active) return false
+        w.pointerBy(dx.toFloat(), dy.toFloat())
+        return true
+    }
+
+    fun remoteDiscordClick(right: Boolean): Boolean {
+        val w = dw
+        if (w == null || !w.active) return false
+        w.click(right)
+        return true
+    }
+
+    fun remoteDiscordScroll(d: Int): Boolean {
+        val w = dw
+        if (w == null || !w.active) return false
+        w.scroll(d.toFloat())
+        return true
+    }
+
+    fun remoteDiscordType(t: String): Boolean {
+        val w = dw
+        if (w == null || !w.active) return false
+        w.type(t)
+        return true
+    }
+
     // ------------------------------------------------------------------ moving the Twitch window or the menu
     private fun applyMenuPos() {
         val dm = resources.displayMetrics
@@ -665,6 +765,11 @@ class PlayerActivity : Activity() {
             if (!w.active) return
             closeMenu()
             w.hint("Arrows move  -  OK when done")
+        } else if (what == 3) {
+            val w = dw ?: return
+            if (!w.active) return
+            closeMenu()
+            w.hint("Arrows move  -  OK when done")
         } else {
             menu.removeAllViews()
             menu.addView(Skin.text(this, "Move the menu", 16f, Skin.CYAN, true).apply { setPadding(0, 0, 0, Skin.dp(this@PlayerActivity, 8)) })
@@ -678,6 +783,8 @@ class PlayerActivity : Activity() {
         val dm = resources.displayMetrics
         if (moving == 1) {
             tw?.moveBy(dx, dy)
+        } else if (moving == 3) {
+            dw?.moveBy(dx, dy)
         } else if (moving == 2) {
             menuDx += dx.toFloat() / dm.widthPixels
             menuDy += dy.toFloat() / dm.heightPixels
@@ -694,6 +801,10 @@ class PlayerActivity : Activity() {
         if (was == 1) {
             tw?.savePos()
             tw?.hint(null)
+            flash("Saved")
+        } else if (was == 3) {
+            dw?.savePos()
+            dw?.hint(null)
             flash("Saved")
         } else if (was == 2) {
             Store.putStr(this, "menu_dx", menuDx.toString())
