@@ -154,7 +154,7 @@ object Model {
         "sot|2|start" to doubleArrayOf(-0.438, 0.803), "shots|1|sub" to doubleArrayOf(0.169, 0.754),
         "shots|2|sub" to doubleArrayOf(-0.636, 0.437), "shots|3|sub" to doubleArrayOf(-0.908, 0.462),
         "sot|1|sub" to doubleArrayOf(-0.315, 0.655), "sot|2|sub" to doubleArrayOf(-1.849, 0.428),
-        "yc|start" to doubleArrayOf(-1.016, 0.383), "yc|sub" to doubleArrayOf(-1.532, 0.417),
+        "yc|start" to doubleArrayOf(-0.397, 0.733), "yc|sub" to doubleArrayOf(-1.532, 0.417),
         "fouls|1" to doubleArrayOf(0.072, 0.753), "fouls|2" to doubleArrayOf(-0.317, 0.685),
         "fouls|3" to doubleArrayOf(-0.842, 0.620), "fouled|1" to doubleArrayOf(-0.068, 0.804),
         "fouled|2" to doubleArrayOf(-0.263, 0.723), "fouled|3" to doubleArrayOf(-0.797, 0.607)
@@ -476,6 +476,9 @@ object Model {
     const val SUB_LAM_SCALE = 0.6
     const val FOUL_SUB_FIX = true
     const val MIN_PLAY = 0.12
+    /** Booking chance rests 65% on his fouls per game and 35% on his yellows (tested on the PC app: about 0.5% better). */
+    const val K_BOOK = 8.0
+    const val W_BOOK = 0.65
     const val PRI_K = 1.0
 
     fun aggregatePlayers(events: List<Event>): Aggregated {
@@ -557,10 +560,10 @@ object Model {
     }
 
     /** Shrunk per-appearance rates, for both roles (index 0 = start, 1 = sub). */
-    fun playerRates(a: Agg?, pri: Map<String, Rates>, k: Double = 4.0): Array<Rates> {
+    fun playerRates(a: Agg?, pri: Map<String, Rates>, k: Double = 4.0, group: String = ""): Array<Rates> {
         return Array(2) { ri ->
             val role = if (ri == 0) "start" else "sub"
-            val p = priorFor(pri, a?.group ?: "", role)
+            val p = priorFor(pri, a?.group?.ifEmpty { group } ?: group, role)
             val rec = a?.role(role)
             val n = rec?.apps ?: 0
             val v = DoubleArray(5) { i -> ((rec?.s?.get(i) ?: 0) + k * p.v[i]) / (n + k) }
@@ -603,7 +606,11 @@ object Model {
         fun pick(l: String, s: String?) = opp.filter { posLine(it.pos) == l && (s == null || posSide(it.pos) == s) }
         var c: List<PlayerLine> = emptyList()
         when (line) {
-            "W" -> { c = pick("FB", o); if (c.isEmpty()) c = pick("W", o); if (c.isEmpty()) c = pick("CB", o) }
+            "W" -> {
+                c = pick("FB", o); if (c.isEmpty()) c = pick("W", o); if (c.isEmpty()) c = pick("CB", o)
+                // also the opposing winger on the same flank (tested on the PC app, small gain for wide players)
+                c = c + pick("W", o).filter { w -> c.none { it.id == w.id } }
+            }
             "FB" -> { c = pick("W", o); if (c.isEmpty()) c = pick("S", null) }
             "CB" -> c = pick("S", null)
             "S" -> c = pick("CB", null)
@@ -647,8 +654,8 @@ object Model {
         val starterRates = HashMap<String, Pair<Rates, String>>()
         for ((side, _, _) in sides) for (p in lineup.side(side).starters) {
             val a = players[p.id]
-            val rates = playerRates(a, pri)[0]
             val pos = if (p.pos.isNotEmpty()) p.pos else (a?.pos ?: "")
+            val rates = playerRates(a, pri, group = posGroup(pos))[0]
             starterRates[p.id] = rates to pos
         }
         for ((side, team, opp) in sides) {
@@ -683,9 +690,9 @@ object Model {
             for (en in entries) {
                 val p = en.p; val roleKey = en.role; val ps = en.ps
                 val a = players[p.id]
-                val ratesAll = playerRates(a, pri)
                 val pos = if (p.pos.isNotEmpty() && p.pos.uppercase() != "SUB") p.pos else (a?.pos ?: "")
                 val group = posGroup(pos).ifEmpty { a?.group ?: "" }
+                val ratesAll = playerRates(a, pri, group = group)
 
                 fun probs(role: String, scale: Double, matchup: Boolean, fscale: Double?): Probs {
                     val rr = ratesAll[if (role == "start") 0 else 1].v
@@ -710,7 +717,16 @@ object Model {
                     val lFouled = rr[S_FOULED] * fFouled * mFouled * fsc
                     val lShots = rr[S_SHOTS] * fShots * scale
                     val lSot = rr[S_SOT] * fSot * scale
-                    val lYc = rr[S_YC] * fBook * mFouls * scale
+                    // booking rate: a blend of his yellows and his fouls per game (fouls turned into expected yellows with
+                    // his position's cards-per-foul), each pulled toward the position average
+                    val pp = priorFor(pri, a?.group?.ifEmpty { group } ?: group, role)
+                    val rec = a?.role(role)
+                    val n = rec?.apps ?: 0
+                    val ycR = ((rec?.s?.get(S_YC) ?: 0) + K_BOOK * pp.v[S_YC]) / (n + K_BOOK)
+                    val fR = ((rec?.s?.get(S_FOULS) ?: 0) + K_BOOK * pp.v[S_FOULS]) / (n + K_BOOK)
+                    val cpf = if (pp.v[S_FOULS] > 0) pp.v[S_YC] / pp.v[S_FOULS] else 1.0
+                    val bookRate = (1 - W_BOOK) * ycR + W_BOOK * fR * cpf
+                    val lYc = bookRate * fBook * mFouls * scale
                     return Probs(
                         listOf(recalibrate(1.0 - exp(-lYc), "yc|$role")),
                         foulsProbs(lFouls, role), foulsProbs(lFouled, role, "fouled"),

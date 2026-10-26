@@ -21,12 +21,13 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
     private var engine: Engine? = null
     override val eng: Engine get() = engine ?: throw IllegalStateException("football numbers not ready")
     private val pages = FootPages(this)
+    private val top5 = Top5(this)
 
     private class Nav(val key: String, val label: String)
     private val navItems = listOf(
         Nav("hub", "Match Day"), Nav("PL", "Premier League"), Nav("ELC", "Championship"), Nav("form", "Form"),
         Nav("exp", "Expected table"), Nav("picks", "My Picks"), Nav("watch", "Watch-list"), Nav("card", "Scorecard"),
-        Nav("refresh", "Refresh now")
+        Nav("top5", "Top 5"), Nav("refresh", "Refresh now")
     )
     private val navViews = HashMap<String, View>()
     private val navCol = LinearLayout(act)
@@ -263,6 +264,7 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
             "picks" -> pages.picksPage()
             "watch" -> if (!state.hasData) noData() else pages.watchPage()
             "card" -> pages.scorecardPage()
+            "top5" -> if (!state.hasData) noData() else top5.page()
             else -> noData()
         }
     }
@@ -327,7 +329,8 @@ class FootballScreen(act: MainActivity) : Screen(act), FootHost, MenuKeyHandler 
         popupObj.choices("Football", listOf(
             "Match Day" to { popupObj.hide(); pick("hub") },
             "Refresh now" to { popupObj.hide(); startRefresh() },
-            "Scorecard" to { popupObj.hide(); pick("card") }))
+            "Scorecard" to { popupObj.hide(); pick("card") },
+            "Top 5" to { popupObj.hide(); pick("top5") }))
         return true
     }
 
